@@ -1,5 +1,11 @@
 #include "../include/query_generator.hpp"
 
+extern "C" {
+#include <postgres.h>
+#include <executor/spi.h>
+#include <utils/builtins.h>
+}
+
 #include <ai/openai.h>
 #include <ai/anthropic.h>
 
@@ -183,12 +189,36 @@ std::string QueryGenerator::buildPrompt(const QueryRequest& request) {
     prompt << "Generate a PostgreSQL query for this request:\n\n";
     prompt << "Request: " << request.natural_language << "\n";
 
-    if (!request.table_name.empty()) {
-        prompt << "Table: " << request.table_name << "\n";
+    // Always automatically discover schema
+    std::string schema_context;
+    try {
+        // Get database schema automatically
+        auto schema = getDatabaseTables();
+        if (schema.success) {
+            schema_context = formatSchemaForAI(schema);
+
+            // Check if query mentions specific tables and get their details
+            std::vector<std::string> mentioned_tables;
+            for (const auto& table : schema.tables) {
+                if (request.natural_language.find(table.table_name) != std::string::npos) {
+                    mentioned_tables.push_back(table.table_name);
+                }
+            }
+
+            // Get detailed info for mentioned tables (limit to avoid context overflow)
+            for (size_t i = 0; i < mentioned_tables.size() && i < 3; ++i) {
+                auto table_details = getTableDetails(mentioned_tables[i]);
+                if (table_details.success) {
+                    schema_context += "\n" + formatTableDetailsForAI(table_details);
+                }
+            }
+        }
+    } catch (...) {
+        // If auto-schema fails, continue without it
     }
 
-    if (!request.schema_context.empty()) {
-        prompt << "Schema info:\n" << request.schema_context << "\n";
+    if (!schema_context.empty()) {
+        prompt << "Schema info:\n" << schema_context << "\n";
     }
 
     return prompt.str();
@@ -213,5 +243,263 @@ nlohmann::json QueryGenerator::extractSQLFromResponse(const std::string& text) {
     // Fallback
     return {{"sql", text}, {"explanation", "Raw LLM output (no JSON detected)"}};
 }
+
+DatabaseSchema QueryGenerator::getDatabaseTables() {
+    DatabaseSchema result;
+    result.success = false;
+
+    try {
+        if (SPI_connect() != SPI_OK_CONNECT) {
+            result.error_message = "Failed to connect to SPI";
+            return result;
+        }
+
+        const char* query = R"(
+            SELECT
+                t.table_name,
+                t.table_schema,
+                t.table_type,
+                COALESCE(pg_stat.n_tup_ins + pg_stat.n_tup_upd + pg_stat.n_tup_del, 0) as estimated_rows
+            FROM information_schema.tables t
+            LEFT JOIN pg_stat_user_tables pg_stat ON t.table_name = pg_stat.relname
+                AND t.table_schema = pg_stat.schemaname
+            WHERE t.table_schema NOT IN ('information_schema', 'pg_catalog')
+                AND t.table_type = 'BASE TABLE'
+            ORDER BY t.table_schema, t.table_name
+        )";
+
+        int ret = SPI_execute(query, true, 0);
+
+        if (ret != SPI_OK_SELECT) {
+            result.error_message = "Failed to execute query";
+            SPI_finish();
+            return result;
+        }
+
+        SPITupleTable* tuptable = SPI_tuptable;
+        TupleDesc tupdesc = tuptable->tupdesc;
+
+        for (uint64 i = 0; i < SPI_processed; i++) {
+            HeapTuple tuple = tuptable->vals[i];
+            TableInfo table_info;
+
+            char* table_name = SPI_getvalue(tuple, tupdesc, 1);
+            char* schema_name = SPI_getvalue(tuple, tupdesc, 2);
+            char* table_type = SPI_getvalue(tuple, tupdesc, 3);
+            char* estimated_rows_str = SPI_getvalue(tuple, tupdesc, 4);
+
+            if (table_name) table_info.table_name = std::string(table_name);
+            if (schema_name) table_info.schema_name = std::string(schema_name);
+            if (table_type) table_info.table_type = std::string(table_type);
+            if (estimated_rows_str) {
+                table_info.estimated_rows = atoll(estimated_rows_str);
+            } else {
+                table_info.estimated_rows = 0;
+            }
+
+            result.tables.push_back(table_info);
+
+            if (table_name) pfree(table_name);
+            if (schema_name) pfree(schema_name);
+            if (table_type) pfree(table_type);
+            if (estimated_rows_str) pfree(estimated_rows_str);
+        }
+
+        result.success = true;
+        SPI_finish();
+
+    } catch (const std::exception& e) {
+        result.error_message = std::string("Exception: ") + e.what();
+        SPI_finish();
+    }
+
+    return result;
+}
+
+TableDetails QueryGenerator::getTableDetails(const std::string& table_name, const std::string& schema_name) {
+    TableDetails result;
+    result.success = false;
+    result.table_name = table_name;
+    result.schema_name = schema_name;
+
+    try {
+        if (SPI_connect() != SPI_OK_CONNECT) {
+            result.error_message = "Failed to connect to SPI";
+            return result;
+        }
+
+        // Query for column details with constraints
+        std::string column_query = R"(
+            SELECT
+                c.column_name,
+                c.data_type,
+                c.is_nullable,
+                c.column_default,
+                CASE WHEN pk.column_name IS NOT NULL THEN true ELSE false END as is_primary_key,
+                CASE WHEN fk.column_name IS NOT NULL THEN true ELSE false END as is_foreign_key,
+                fk.foreign_table_name,
+                fk.foreign_column_name
+            FROM information_schema.columns c
+            LEFT JOIN (
+                SELECT kcu.column_name, kcu.table_name, kcu.table_schema
+                FROM information_schema.table_constraints tc
+                JOIN information_schema.key_column_usage kcu
+                    ON tc.constraint_name = kcu.constraint_name
+                    AND tc.table_schema = kcu.table_schema
+                WHERE tc.constraint_type = 'PRIMARY KEY'
+            ) pk ON c.column_name = pk.column_name
+                AND c.table_name = pk.table_name
+                AND c.table_schema = pk.table_schema
+            LEFT JOIN (
+                SELECT
+                    kcu.column_name,
+                    kcu.table_name,
+                    kcu.table_schema,
+                    ccu.table_name AS foreign_table_name,
+                    ccu.column_name AS foreign_column_name
+                FROM information_schema.table_constraints tc
+                JOIN information_schema.key_column_usage kcu
+                    ON tc.constraint_name = kcu.constraint_name
+                    AND tc.table_schema = kcu.table_schema
+                JOIN information_schema.constraint_column_usage ccu
+                    ON ccu.constraint_name = tc.constraint_name
+                    AND ccu.table_schema = tc.table_schema
+                WHERE tc.constraint_type = 'FOREIGN KEY'
+            ) fk ON c.column_name = fk.column_name
+                AND c.table_name = fk.table_name
+                AND c.table_schema = fk.table_schema
+            WHERE c.table_name = ')" + table_name + R"('
+                AND c.table_schema = ')" + schema_name + R"('
+            ORDER BY c.ordinal_position
+        )";
+
+        int ret = SPI_execute(column_query.c_str(), true, 0);
+
+        if (ret != SPI_OK_SELECT) {
+            result.error_message = "Failed to execute column query";
+            SPI_finish();
+            return result;
+        }
+
+        SPITupleTable* tuptable = SPI_tuptable;
+        TupleDesc tupdesc = tuptable->tupdesc;
+
+        for (uint64 i = 0; i < SPI_processed; i++) {
+            HeapTuple tuple = tuptable->vals[i];
+            ColumnInfo column_info;
+
+            char* column_name = SPI_getvalue(tuple, tupdesc, 1);
+            char* data_type = SPI_getvalue(tuple, tupdesc, 2);
+            char* is_nullable = SPI_getvalue(tuple, tupdesc, 3);
+            char* column_default = SPI_getvalue(tuple, tupdesc, 4);
+            char* is_primary_key = SPI_getvalue(tuple, tupdesc, 5);
+            char* is_foreign_key = SPI_getvalue(tuple, tupdesc, 6);
+            char* foreign_table = SPI_getvalue(tuple, tupdesc, 7);
+            char* foreign_column = SPI_getvalue(tuple, tupdesc, 8);
+
+            if (column_name) column_info.column_name = std::string(column_name);
+            if (data_type) column_info.data_type = std::string(data_type);
+            if (is_nullable) column_info.is_nullable = (std::string(is_nullable) == "YES");
+            if (column_default) column_info.column_default = std::string(column_default);
+            if (is_primary_key) column_info.is_primary_key = (std::string(is_primary_key) == "t");
+            if (is_foreign_key) column_info.is_foreign_key = (std::string(is_foreign_key) == "t");
+            if (foreign_table) column_info.foreign_table = std::string(foreign_table);
+            if (foreign_column) column_info.foreign_column = std::string(foreign_column);
+
+            result.columns.push_back(column_info);
+
+            if (column_name) pfree(column_name);
+            if (data_type) pfree(data_type);
+            if (is_nullable) pfree(is_nullable);
+            if (column_default) pfree(column_default);
+            if (is_primary_key) pfree(is_primary_key);
+            if (is_foreign_key) pfree(is_foreign_key);
+            if (foreign_table) pfree(foreign_table);
+            if (foreign_column) pfree(foreign_column);
+        }
+
+        // Query for indexes
+        std::string index_query = R"(
+            SELECT indexname, indexdef
+            FROM pg_indexes
+            WHERE tablename = ')" + table_name + R"('
+                AND schemaname = ')" + schema_name + R"('
+            ORDER BY indexname
+        )";
+
+        ret = SPI_execute(index_query.c_str(), true, 0);
+
+        if (ret == SPI_OK_SELECT) {
+            tuptable = SPI_tuptable;
+            tupdesc = tuptable->tupdesc;
+
+            for (uint64 i = 0; i < SPI_processed; i++) {
+                HeapTuple tuple = tuptable->vals[i];
+                char* indexname = SPI_getvalue(tuple, tupdesc, 1);
+                char* indexdef = SPI_getvalue(tuple, tupdesc, 2);
+
+                if (indexdef) {
+                    result.indexes.push_back(std::string(indexdef));
+                }
+
+                if (indexname) pfree(indexname);
+                if (indexdef) pfree(indexdef);
+            }
+        }
+
+        result.success = true;
+        SPI_finish();
+
+    } catch (const std::exception& e) {
+        result.error_message = std::string("Exception: ") + e.what();
+        SPI_finish();
+    }
+
+    return result;
+}
+
+std::string QueryGenerator::formatSchemaForAI(const DatabaseSchema& schema) {
+    std::ostringstream result;
+    result << "=== DATABASE SCHEMA ===\n";
+    result << "Available tables:\n\n";
+
+    for (const auto& table : schema.tables) {
+        result << "- " << table.schema_name << "." << table.table_name
+               << " (" << table.table_type << ", ~" << table.estimated_rows << " rows)\n";
+    }
+
+    result << "\nUse get_table_details(table_name) for detailed column information.\n";
+    return result.str();
+}
+
+std::string QueryGenerator::formatTableDetailsForAI(const TableDetails& details) {
+    std::ostringstream result;
+    result << "=== TABLE: " << details.schema_name << "." << details.table_name << " ===\n\n";
+
+    result << "COLUMNS:\n";
+    for (const auto& col : details.columns) {
+        result << "- " << col.column_name << " (" << col.data_type << ")";
+
+        if (col.is_primary_key) result << " [PRIMARY KEY]";
+        if (col.is_foreign_key) {
+            result << " [FK -> " << col.foreign_table << "." << col.foreign_column << "]";
+        }
+        if (!col.is_nullable) result << " [NOT NULL]";
+        if (!col.column_default.empty()) {
+            result << " [DEFAULT: " << col.column_default << "]";
+        }
+        result << "\n";
+    }
+
+    if (!details.indexes.empty()) {
+        result << "\nINDEXES:\n";
+        for (const auto& idx : details.indexes) {
+            result << "- " << idx << "\n";
+        }
+    }
+
+    return result.str();
+}
+
 
 }  // namespace pg_ai
