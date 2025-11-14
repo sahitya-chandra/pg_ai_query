@@ -28,6 +28,7 @@ jobs:
       with:
         submodules: recursive
 
+
     - name: Setup Node.js for security tools
       uses: actions/setup-node@v4
       with:
@@ -117,8 +118,6 @@ jobs:
       uses: trufflesecurity/trufflehog@main
       with:
         path: ./
-        base: main
-        head: HEAD
         extra_args: --debug --only-verified
 
     - name: Scan for API keys and secrets
@@ -161,8 +160,12 @@ jobs:
       with:
         submodules: recursive
 
+
     - name: Install dependencies for security analysis
       run: |
+        # Install PostgreSQL from official APT repository
+        wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo apt-key add -
+        sudo sh -c 'echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
         sudo apt-get update
         sudo apt-get install -y \
           clang-tools \
@@ -171,6 +174,8 @@ jobs:
           build-essential \
           cmake \
           libssl-dev \
+          gettext \
+          libz-dev \
           postgresql-14 \
           postgresql-server-dev-14
 
@@ -321,7 +326,7 @@ jobs:
         fi
 
     - name: Upload license report
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: license-compliance-report
         path: license-report.md
@@ -335,7 +340,7 @@ jobs:
 
     steps:
     - name: Download all security artifacts
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
       continue-on-error: true
 
     - name: Generate security summary
@@ -387,7 +392,7 @@ jobs:
         EOF
 
     - name: Upload security summary
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: security-assessment-summary
         path: security-summary.txt

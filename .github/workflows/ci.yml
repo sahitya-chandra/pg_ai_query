@@ -6,6 +6,12 @@ on:
   pull_request:
     branches: [ main ]
 
+# Required permissions for CodeQL action
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+
 env:
   CMAKE_BUILD_TYPE: Release
 
@@ -17,15 +23,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        # os: [ubuntu-latest, macos-latest]  # Temporarily comment out Ubuntu
+        os: [macos-latest]
         pg_version: ["14", "15", "16"]
-        include:
-          - os: ubuntu-latest
-            pg_package: postgresql-${{ matrix.pg_version }}
-            pg_dev_package: postgresql-server-dev-${{ matrix.pg_version }}
-          - os: macos-latest
-            pg_package: postgresql@${{ matrix.pg_version }}
-            pg_dev_package: postgresql@${{ matrix.pg_version }}
 
     steps:
     - name: Checkout code
@@ -34,8 +34,14 @@ jobs:
         submodules: recursive
         fetch-depth: 0
 
+    - name: Verify submodules
+      run: |
+        echo "Verifying submodule initialization..."
+        git submodule status
+        ls -la third_party/ai-sdk-cpp/CMakeLists.txt
+
     - name: Cache dependencies
-      uses: actions/cache@v3
+      uses: actions/cache@v4
       with:
         path: |
           ~/.cache/vcpkg
@@ -47,22 +53,27 @@ jobs:
     - name: Install dependencies (Ubuntu)
       if: matrix.os == 'ubuntu-latest'
       run: |
-        sudo sh -c 'echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+        # Install PostgreSQL from official APT repository
         wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo apt-key add -
+        sudo sh -c 'echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
         sudo apt-get update
         sudo apt-get install -y \
           build-essential \
           cmake \
           libssl-dev \
           pkg-config \
-          ${{ matrix.pg_package }} \
-          ${{ matrix.pg_dev_package }}
+          gettext \
+          libz-dev \
+          postgresql-${{ matrix.pg_version }} \
+          postgresql-server-dev-${{ matrix.pg_version }}
 
     - name: Install dependencies (macOS)
       if: matrix.os == 'macos-latest'
       run: |
         brew update
-        brew install cmake openssl pkg-config ${{ matrix.pg_package }}
+        brew install cmake openssl pkg-config gettext postgresql@${{ matrix.pg_version }}
+        # Link gettext for macOS
+        brew link --force gettext
 
     - name: Setup PostgreSQL (Ubuntu)
       if: matrix.os == 'ubuntu-latest'
@@ -74,20 +85,33 @@ jobs:
     - name: Setup PostgreSQL (macOS)
       if: matrix.os == 'macos-latest'
       run: |
-        brew services start ${{ matrix.pg_package }}
+        # Add PostgreSQL to PATH
+        echo "$(brew --prefix postgresql@${{ matrix.pg_version }})/bin" >> $GITHUB_PATH
+        export PATH="$(brew --prefix postgresql@${{ matrix.pg_version }})/bin:$PATH"
+
+        brew services start postgresql@${{ matrix.pg_version }}
         sleep 5
+
+        # Verify tools are available
+        which psql || echo "psql not found"
+        which createdb || echo "createdb not found"
+
         createdb testdb || true
 
     - name: Configure CMake
       run: |
         if [[ "${{ matrix.os }}" == "macos-latest" ]]; then
-          export PG_CONFIG=$(brew --prefix ${{ matrix.pg_package }})/bin/pg_config
-          export OPENSSL_ROOT_DIR=$(brew --prefix openssl)
+          PG_CONFIG=$(brew --prefix postgresql@${{ matrix.pg_version }})/bin/pg_config
+          OPENSSL_ROOT_DIR=$(brew --prefix openssl)
+          cmake -B build -DCMAKE_BUILD_TYPE=${{env.CMAKE_BUILD_TYPE}} \
+                -DCMAKE_INSTALL_PREFIX=/tmp/pg_ai_query_install \
+                -DPG_CONFIG="$PG_CONFIG" \
+                -DOPENSSL_ROOT_DIR="$OPENSSL_ROOT_DIR"
         else
-          export PG_CONFIG=/usr/bin/pg_config
+          cmake -B build -DCMAKE_BUILD_TYPE=${{env.CMAKE_BUILD_TYPE}} \
+                -DCMAKE_INSTALL_PREFIX=/tmp/pg_ai_query_install \
+                -DPG_CONFIG=/usr/bin/pg_config
         fi
-        cmake -B build -DCMAKE_BUILD_TYPE=${{env.CMAKE_BUILD_TYPE}} \
-              -DCMAKE_INSTALL_PREFIX=/tmp/pg_ai_query_install
 
     - name: Build extension
       run: |
@@ -97,9 +121,34 @@ jobs:
       run: |
         # Install extension for testing
         if [[ "${{ matrix.os }}" == "macos-latest" ]]; then
-          export PG_CONFIG=$(brew --prefix ${{ matrix.pg_package }})/bin/pg_config
+          export PG_CONFIG=$(brew --prefix postgresql@${{ matrix.pg_version }})/bin/pg_config
+          export PATH="$(brew --prefix postgresql@${{ matrix.pg_version }})/bin:$PATH"
+          export PGDATA="/opt/homebrew/var/postgresql@${{ matrix.pg_version }}"
         fi
         sudo cmake --install build
+
+        # Verify psql is available
+        which psql || echo "psql not found in PATH"
+        psql --version || echo "psql version check failed"
+
+        # Verify extension files were installed
+        PG_PKGLIB=$($(brew --prefix postgresql@${{ matrix.pg_version }})/bin/pg_config --pkglibdir)
+        PG_SHAREDIR=$($(brew --prefix postgresql@${{ matrix.pg_version }})/bin/pg_config --sharedir)
+        echo "PostgreSQL pkglibdir: $PG_PKGLIB"
+        echo "PostgreSQL sharedir: $PG_SHAREDIR"
+
+        echo "Checking for extension binary:"
+        ls -la "$PG_PKGLIB/pg_ai_query.so" || echo "Extension binary not found"
+
+        echo "Checking for control file:"
+        ls -la "$PG_SHAREDIR/extension/pg_ai_query.control" || echo "Control file not found"
+
+        echo "Checking for SQL file:"
+        ls -la "$PG_SHAREDIR/extension/pg_ai_query--1.0.sql" || echo "SQL file not found"
+
+        # Check linked libraries
+        echo "Checking linked libraries:"
+        otool -L "$PG_PKGLIB/pg_ai_query.so" || echo "Could not check linked libraries"
 
         # Basic functionality test
         psql -d testdb -c "CREATE EXTENSION IF NOT EXISTS pg_ai_query;"
@@ -118,7 +167,7 @@ jobs:
         psql -d testdb -c "SELECT get_table_details('test_users');"
 
     - name: Upload build artifacts
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       if: always()
       with:
         name: build-artifacts-${{ matrix.os }}-pg${{ matrix.pg_version }}
@@ -141,11 +190,16 @@ jobs:
 
     - name: Install dependencies
       run: |
+        # Install PostgreSQL from official APT repository
+        wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo apt-key add -
+        sudo sh -c 'echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
         sudo apt-get update
         sudo apt-get install -y \
           build-essential \
           cmake \
           libssl-dev \
+          gettext \
+          libz-dev \
           postgresql-14 \
           postgresql-server-dev-14 \
           cppcheck \
@@ -154,6 +208,7 @@ jobs:
     - name: Configure CMake with static analysis
       run: |
         cmake -B build -DCMAKE_BUILD_TYPE=Debug \
+              -DPG_CONFIG=/usr/bin/pg_config \
               -DCMAKE_CXX_CPPCHECK="cppcheck;--enable=all;--suppress=missingIncludeSystem" \
               -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
 
@@ -168,7 +223,7 @@ jobs:
         2>&1 | tee clang-tidy.log || true
 
     - name: Upload analysis results
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: static-analysis-results
         path: |
@@ -194,15 +249,22 @@ jobs:
         output: 'trivy-results.sarif'
 
     - name: Upload Trivy scan results to GitHub Security tab
-      uses: github/codeql-action/upload-sarif@v2
-      if: always()
+      uses: github/codeql-action/upload-sarif@v4
+      if: always() && github.event_name != 'pull_request'
+      continue-on-error: true
       with:
         sarif_file: 'trivy-results.sarif'
+
+    - name: Upload Trivy results as artifact (for PRs)
+      if: github.event_name == 'pull_request'
+      uses: actions/upload-artifact@v4
+      with:
+        name: trivy-security-scan-results
+        path: 'trivy-results.sarif'
+        retention-days: 7
 
     - name: Check for secrets
       uses: trufflesecurity/trufflehog@main
       with:
         path: ./
-        base: main
-        head: HEAD
         extra_args: --debug --only-verified

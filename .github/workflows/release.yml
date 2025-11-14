@@ -270,7 +270,7 @@ jobs:
         echo "Package size: $(du -h ${{ matrix.artifact_name }}.tar.gz | cut -f1)"
 
     - name: Upload release artifact
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: ${{ matrix.artifact_name }}
         path: ${{ matrix.artifact_name }}.tar.gz
@@ -281,16 +281,13 @@ jobs:
     needs: [validate-release, build-release-artifacts]
     runs-on: ubuntu-latest
 
-    outputs:
-      release_url: ${{ steps.create_release.outputs.html_url }}
-      upload_url: ${{ steps.create_release.outputs.upload_url }}
 
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
 
     - name: Download all artifacts
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
 
     - name: Generate release notes
       id: release_notes
@@ -367,15 +364,19 @@ jobs:
 
     - name: Create Release
       id: create_release
-      uses: actions/create-release@v1
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        tag_name: ${{ needs.validate-release.outputs.version }}
-        release_name: pg_ai_query ${{ needs.validate-release.outputs.version }}
-        body_path: release_notes.md
-        draft: false
-        prerelease: ${{ needs.validate-release.outputs.is_prerelease }}
+      run: |
+        if [ "${{ needs.validate-release.outputs.is_prerelease }}" == "true" ]; then
+          PRERELEASE_FLAG="--prerelease"
+        else
+          PRERELEASE_FLAG=""
+        fi
+
+        gh release create "${{ needs.validate-release.outputs.version }}" \
+          --title "pg_ai_query ${{ needs.validate-release.outputs.version }}" \
+          --notes-file release_notes.md \
+          $PRERELEASE_FLAG
 
   upload-release-assets:
     name: Upload Release Assets
@@ -393,19 +394,16 @@ jobs:
 
     steps:
     - name: Download artifact
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
       with:
         name: ${{ matrix.artifact }}
 
     - name: Upload Release Asset
-      uses: actions/upload-release-asset@v1
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        upload_url: ${{ needs.create-release.outputs.upload_url }}
-        asset_path: ${{ matrix.artifact }}.tar.gz
-        asset_name: ${{ matrix.artifact }}.tar.gz
-        asset_content_type: application/gzip
+      run: |
+        gh release upload "${{ needs.validate-release.outputs.version }}" \
+          "${{ matrix.artifact }}.tar.gz"
 
   post-release:
     name: Post-Release Tasks
@@ -419,7 +417,7 @@ jobs:
     - name: Update documentation version
       run: |
         echo "Release ${{ needs.validate-release.outputs.version }} completed successfully!"
-        echo "Release URL: ${{ needs.create-release.outputs.release_url }}"
+        echo "Release URL: https://github.com/${{ github.repository }}/releases/tag/${{ needs.validate-release.outputs.version }}"
         echo "Release Statistics:"
         echo "  - Version: ${{ needs.validate-release.outputs.version }}"
         echo "  - Pre-release: ${{ needs.validate-release.outputs.is_prerelease }}"
@@ -432,7 +430,7 @@ jobs:
       with:
         script: |
           const version = '${{ needs.validate-release.outputs.version }}';
-          const releaseUrl = '${{ needs.create-release.outputs.release_url }}';
+          const releaseUrl = `https://github.com/${{ github.repository }}/releases/tag/${{ needs.validate-release.outputs.version }}`;
 
           // You could extend this to post to discussions, send notifications, etc.
           console.log(`pg_ai_query ${version} has been released!`);

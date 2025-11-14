@@ -3,8 +3,9 @@
 extern "C" {
 #include <postgres.h>
 
-#include <executor/spi.h>
 #include <utils/builtins.h>
+
+#include <executor/spi.h>
 }
 
 #include <algorithm>

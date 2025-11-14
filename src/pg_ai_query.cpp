@@ -1,9 +1,14 @@
 extern "C" {
 #include <postgres.h>
+
+#include <access/htup_details.h>
+#include <catalog/pg_type.h>
 #include <fmgr.h>
 #include <funcapi.h>
+#include <miscadmin.h>
 #include <utils/builtins.h>
 #include <utils/elog.h>
+#include <utils/memutils.h>
 }
 
 #include <nlohmann/json.hpp>

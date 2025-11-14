@@ -12,14 +12,17 @@ execute_process(COMMAND ${PG_CONFIG} --includedir OUTPUT_VARIABLE PG_INCLUDE OUT
 execute_process(COMMAND ${PG_CONFIG} --pkglibdir OUTPUT_VARIABLE PG_PKGLIB OUTPUT_STRIP_TRAILING_WHITESPACE)
 execute_process(COMMAND ${PG_CONFIG} --libdir OUTPUT_VARIABLE PG_LIBDIR OUTPUT_STRIP_TRAILING_WHITESPACE)
 execute_process(COMMAND ${PG_CONFIG} --bindir OUTPUT_VARIABLE PG_BINDIR OUTPUT_STRIP_TRAILING_WHITESPACE)
+execute_process(COMMAND ${PG_CONFIG} --sharedir OUTPUT_VARIABLE PG_SHAREDIR OUTPUT_STRIP_TRAILING_WHITESPACE)
 
 # Include PostgreSQL headers
 include_directories(${PG_INCLUDE_SERVER})
 include_directories(${PG_INCLUDE})
 
-# Configure ai-sdk-cpp options
+# Configure ai-sdk-cpp options to use static libraries only
 set(AI_SDK_BUILD_EXAMPLES OFF CACHE BOOL "")
 set(AI_SDK_BUILD_TESTS OFF CACHE BOOL "")
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "")
+set(AI_SDK_STATIC_ONLY ON CACHE BOOL "")
 
 # Add the ai-sdk-cpp submodule
 add_subdirectory(third_party/ai-sdk-cpp)
@@ -54,10 +57,67 @@ else()
     )
 endif()
 
-# Link with ai-sdk-cpp
+# Find and link required system libraries
+find_package(ZLIB REQUIRED)
+find_package(OpenSSL REQUIRED)
+
+# Find gettext for NLS support (required by PostgreSQL)
+find_package(Intl)
+if(Intl_FOUND)
+    message(STATUS "Found Intl library: ${Intl_LIBRARIES}")
+else()
+    # Try to find gettext manually on macOS
+    if(APPLE)
+        find_path(LIBINTL_INCLUDE_DIR libintl.h PATHS /opt/homebrew/include /usr/local/include)
+        find_library(LIBINTL_LIBRARY intl PATHS /opt/homebrew/lib /usr/local/lib)
+        if(LIBINTL_INCLUDE_DIR AND LIBINTL_LIBRARY)
+            set(Intl_FOUND TRUE)
+            set(Intl_LIBRARIES ${LIBINTL_LIBRARY})
+            set(Intl_INCLUDE_DIRS ${LIBINTL_INCLUDE_DIR})
+            message(STATUS "Found libintl manually: ${LIBINTL_LIBRARY}")
+        endif()
+    endif()
+endif()
+
+# Link with ai-sdk-cpp static libraries to avoid RPATH issues
 target_link_libraries(pg_ai_query PRIVATE
-    ai-sdk-cpp
+    ai-sdk-cpp-core
+    ai-sdk-cpp-openai
+    ai-sdk-cpp-anthropic
+    ZLIB::ZLIB
+    OpenSSL::SSL
+    OpenSSL::Crypto
 )
+
+# Link Intl library if found
+if(Intl_FOUND)
+    target_link_libraries(pg_ai_query PRIVATE ${Intl_LIBRARIES})
+    target_include_directories(pg_ai_query PRIVATE ${Intl_INCLUDE_DIRS})
+endif()
+
+# Set RPATH for macOS to find system libraries
+if(APPLE)
+    # Get the system library path where libz.1.dylib actually exists
+    execute_process(COMMAND find /usr/lib /System/Library/Frameworks -name "libz.1.dylib" -type f 2>/dev/null | head -1
+                   OUTPUT_VARIABLE LIBZ_PATH OUTPUT_STRIP_TRAILING_WHITESPACE)
+    get_filename_component(LIBZ_DIR "${LIBZ_PATH}" DIRECTORY)
+
+    set_target_properties(pg_ai_query PROPERTIES
+        INSTALL_RPATH "@loader_path;/usr/lib;/System/Library/Frameworks;${LIBZ_DIR};/opt/homebrew/lib;/usr/local/lib"
+        BUILD_RPATH "@loader_path;/usr/lib;/System/Library/Frameworks;${LIBZ_DIR};/opt/homebrew/lib;/usr/local/lib"
+        MACOSX_RPATH ON
+        # Force static linking to avoid RPATH issues
+        LINK_SEARCH_START_STATIC ON
+        LINK_SEARCH_END_STATIC ON
+    )
+
+    # Also try to link against system zlib instead of bundled one
+    find_library(SYSTEM_Z z PATHS /usr/lib /System/Library/Frameworks REQUIRED)
+    target_link_libraries(pg_ai_query PRIVATE ${SYSTEM_Z})
+
+    message(STATUS "Found system zlib at: ${SYSTEM_Z}")
+    message(STATUS "Found libz.1.dylib at: ${LIBZ_PATH}")
+endif()
 
 # Include directories
 target_include_directories(pg_ai_query PRIVATE
@@ -70,23 +130,29 @@ target_compile_definitions(pg_ai_query PRIVATE
     USE_POSTGRESQL_ELOG
 )
 
-# Install target
+# Install target to correct PostgreSQL lib directory
 install(TARGETS pg_ai_query
     LIBRARY DESTINATION ${PG_PKGLIB}
 )
 
-# Install SQL files
+# Debug: Print installation paths
+message(STATUS "PostgreSQL pkglibdir: ${PG_PKGLIB}")
+message(STATUS "PostgreSQL sharedir: ${PG_SHAREDIR}")
+message(STATUS "Extension will be installed to: ${PG_PKGLIB}")
+message(STATUS "SQL files will be installed to: ${PG_SHAREDIR}/extension/")
+
+# Install SQL files to the correct PostgreSQL extension directory
 install(FILES sql/pg_ai_query--1.0.sql
-    DESTINATION ${PG_PKGLIB}/../extension/
+    DESTINATION ${PG_SHAREDIR}/extension/
 )
 
 install(FILES pg_ai_query.control
-    DESTINATION ${PG_PKGLIB}/../extension/
+    DESTINATION ${PG_SHAREDIR}/extension/
 )
 
 # Install prompts directory
 install(DIRECTORY prompts/
-    DESTINATION ${PG_PKGLIB}/../extension/prompts/
+    DESTINATION ${PG_SHAREDIR}/extension/prompts/
     FILES_MATCHING PATTERN "*.txt"
 )
 

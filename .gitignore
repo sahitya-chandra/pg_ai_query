@@ -3,7 +3,6 @@ build/
 install/
 dist/
 out/
-ai-sdk-cpp/
 
 # Compiled Object files
 *.slo
