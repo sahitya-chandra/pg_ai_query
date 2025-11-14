@@ -13,9 +13,9 @@ extern "C" {
 
 #include <nlohmann/json.hpp>
 
+#include "include/config.hpp"
 #include "include/query_generator.hpp"
 #include "include/response_formatter.hpp"
-#include "include/config.hpp"
 
 extern "C" {
 PG_MODULE_MAGIC;
@@ -56,10 +56,13 @@ Datum generate_query(PG_FUNCTION_ARGS) {
 
     const auto& config = pg_ai::config::ConfigManager::getConfig();
 
-    std::string formatted_response = pg_ai::ResponseFormatter::formatResponse(result, config);
+    std::string formatted_response =
+        pg_ai::ResponseFormatter::formatResponse(result, config);
 
-    if (config.enable_logging && !config.use_formatted_response && !result.explanation.empty()) {
-      ereport(INFO, (errmsg("Query explanation: %s", result.explanation.c_str())));
+    if (config.enable_logging && !config.use_formatted_response &&
+        !result.explanation.empty()) {
+      ereport(INFO,
+              (errmsg("Query explanation: %s", result.explanation.c_str())));
     }
 
     PG_RETURN_TEXT_P(cstring_to_text(formatted_response.c_str()));

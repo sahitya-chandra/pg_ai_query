@@ -1,8 +1,8 @@
 #pragma once
 
 #include <string>
-#include "query_generator.hpp"
 #include "config.hpp"
+#include "query_generator.hpp"
 
 namespace pg_ai {
 
@@ -15,20 +15,21 @@ class ResponseFormatter {
    * @return Formatted response string
    */
   static std::string formatResponse(const QueryResult& result,
-                                   const config::Configuration& config);
+                                    const config::Configuration& config);
 
  private:
   /**
    * @brief Create JSON formatted response
    */
   static std::string createJSONResponse(const QueryResult& result,
-                                       const config::Configuration& config);
+                                        const config::Configuration& config);
 
   /**
    * @brief Create plain text formatted response
    */
-  static std::string createPlainTextResponse(const QueryResult& result,
-                                           const config::Configuration& config);
+  static std::string createPlainTextResponse(
+      const QueryResult& result,
+      const config::Configuration& config);
 
   /**
    * @brief Format warnings for display

@@ -17,7 +17,7 @@ bool ConfigManager::config_loaded_ = false;
 Configuration::Configuration() {
   // General settings defaults
   log_level = "INFO";
-  enable_logging = false;  // Default: disable logging
+  enable_logging = false;      // Default: disable logging
   request_timeout_ms = 30000;  // 30 seconds
   max_retries = 3;
 
@@ -30,7 +30,6 @@ Configuration::Configuration() {
   show_warnings = true;
   show_suggested_visualization = false;
   use_formatted_response = false;
-
 
   // Set up default OpenAI provider
   default_provider.provider = Provider::OPENAI;
