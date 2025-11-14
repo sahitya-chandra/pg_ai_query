@@ -1,27 +1,34 @@
-# PostgreSQL AI Query Generator
+# PostgreSQL AI Query Extension
 
-A clean, efficient PostgreSQL extension that generates SQL queries from natural language using OpenAI's GPT models.
+A powerful PostgreSQL extension that generates SQL queries from natural language using state-of-the-art AI models from OpenAI and Anthropic.
 
 ## Features
 
-- **Simple API**: One function `pg_generate_query()` for generating SQL
-- **Safety First**: Only generates SELECT queries, validates for dangerous operations
-- **Environment Driven**: Uses `OPENAI_API_KEY` environment variable
-- **Clean Implementation**: Direct AI SDK usage without over-engineering
+- **Natural Language to SQL**: Convert plain English descriptions into valid PostgreSQL queries
+- **Multiple AI Providers**: Support for both OpenAI (GPT-4, GPT-3.5) and Anthropic (Claude) models
+- **Automatic Schema Discovery**: Analyzes your database schema to understand table structures and relationships
+- **Intelligent Query Generation**: Creates optimized queries with appropriate JOINs, WHERE clauses, and LIMIT constraints
+- **Configurable Response Formatting**: Choose between plain SQL, enhanced text with explanations, or structured JSON responses
+- **Safety First**: Built-in protections against dangerous operations and unauthorized system table access
+- **Flexible Configuration**: File-based configuration with support for API keys, model selection, and response formatting
 
-## Installation
+## Quick Start
+
+### Installation
 
 1. **Prerequisites**:
-   - PostgreSQL development headers
+   - PostgreSQL 12+ with development headers
    - CMake 3.16+
-   - OpenAI API key
+   - C++20 compatible compiler
+   - API key from OpenAI or Anthropic
 
 2. **Build and Install**:
    ```bash
-   git clone --recurse-submodules <repo-url>
-   cd pg_ai_queri
-   export OPENAI_API_KEY=your_key_here
-   make install
+   git clone --recurse-submodules https://github.com/benodiwal/pg_ai_query.git
+   cd pg_ai_query
+   mkdir build && cd build
+   cmake ..
+   make && sudo make install
    ```
 
 3. **Enable Extension**:
@@ -29,70 +36,110 @@ A clean, efficient PostgreSQL extension that generates SQL queries from natural 
    CREATE EXTENSION pg_ai_query;
    ```
 
-## Usage
+### Configuration
+
+Create `~/.pg_ai.config`:
+
+```ini
+[general]
+log_level = "INFO"
+enable_logging = false
+
+[query]
+enforce_limit = true
+default_limit = 1000
+
+[response]
+show_explanation = true
+show_warnings = true
+show_suggested_visualization = false
+use_formatted_response = false
+
+[openai]
+api_key = "your-openai-api-key-here"
+default_model = "gpt-4o"
+
+[anthropic]
+api_key = "your-anthropic-api-key-here"
+default_model = "claude-3-5-sonnet-20241022"
+```
+
+### Basic Usage
 
 ```sql
--- Basic query generation
-SELECT pg_generate_query('Show me all users created in the last week');
+-- Generate simple queries
+SELECT generate_query('show all customers');
 
--- With table context
-SELECT pg_generate_query('Count orders by status', 'orders');
+-- Generate complex analytical queries
+SELECT generate_query('monthly sales trend for the last year by category');
 
--- With schema information
-SELECT pg_generate_query(
-    'Find top 5 customers by order value',
-    'customers',
-    'Tables: customers(id, name, email), orders(id, customer_id, total, created_at)'
-);
+-- Generate queries with business logic
+SELECT generate_query('customers who have not placed orders in the last 6 months');
+
+-- Schema discovery functions
+SELECT get_database_tables();
+SELECT get_table_details('orders');
 ```
 
-## Architecture
+### Response Formats
 
-### Clean Implementation (125 lines vs 864 lines original)
-
-- **`QueryGenerator`**: Single static class with core logic
-- **Direct AI SDK**: Uses `ai::openai::create_client()` without wrappers
-- **Environment Config**: No complex configuration management
-- **Built-in Validation**: Essential safety checks only
-
-### Files
-
-```
-src/
-├── pg_ai_query.cpp              # PostgreSQL C interface
-├── core/
-│   └── query_generator.cpp      # Core AI query generation
-└── include/
-    └── query_generator.hpp      # Clean header interface
+**Plain SQL (default)**:
+```sql
+SELECT * FROM customers WHERE created_at >= NOW() - INTERVAL '7 days' LIMIT 1000;
 ```
 
-### Key Simplifications Made
+**Enhanced with explanations and warnings**:
+```sql
+SELECT * FROM customers WHERE created_at >= NOW() - INTERVAL '7 days' LIMIT 1000;
 
-1. **Removed ConfigManager** → Uses `OPENAI_API_KEY` directly
-2. **Removed PIMPL Pattern** → Direct implementation
-3. **Removed Custom Errors** → Uses AI SDK error handling
-4. **Removed Complex Validation** → Essential safety checks only
-5. **Uses AI SDK Constants** → `ai::openai::models::kGpt4o` instead of strings
+-- Explanation:
+-- Retrieves all customers who were created within the last 7 days
 
-## Safety
-
-- Only generates SELECT statements
-- Validates against dangerous SQL operations
-- Blocks INSERT, UPDATE, DELETE, DROP, CREATE, etc.
-- Uses OpenAI with conservative temperature (0.1)
-
-## Development
-
-The codebase follows the ai-sdk-cpp examples pattern for clean, maintainable code:
-
-```cpp
-auto client = ai::openai::create_client();  // From environment
-ai::GenerateOptions options;
-options.model = ai::openai::models::kGpt4o;
-options.prompt = prompt;
-auto result = client.generate_text(options);
+-- Warnings:
+-- 1. Large dataset: Consider adding specific filters for better performance
 ```
+
+**JSON format** (set `use_formatted_response = true`):
+```json
+{
+  "query": "SELECT * FROM customers WHERE created_at >= NOW() - INTERVAL '7 days' LIMIT 1000;",
+  "success": true,
+  "explanation": "Retrieves all customers who were created within the last 7 days",
+  "warnings": ["Large dataset: Consider adding specific filters for better performance"],
+  "suggested_visualization": "table",
+  "row_limit_applied": true
+}
+```
+
+## Documentation
+
+Complete documentation is available at: https://benodiwal.github.io/pg_ai_query/
+
+- [Installation Guide](https://benodiwal.github.io/pg_ai_query/installation.html)
+- [Configuration Reference](https://benodiwal.github.io/pg_ai_query/configuration.html)
+- [Response Formatting](https://benodiwal.github.io/pg_ai_query/response-formatting.html)
+- [Usage Examples](https://benodiwal.github.io/pg_ai_query/examples.html)
+- [API Reference](https://benodiwal.github.io/pg_ai_query/api-reference.html)
+- [Troubleshooting](https://benodiwal.github.io/pg_ai_query/troubleshooting.html)
+
+## Safety and Security
+
+- **System Table Protection**: Blocks access to `information_schema` and `pg_catalog`
+- **Query Validation**: Validates generated SQL for safety
+- **Limited Scope**: Only operates on user tables
+- **Configurable Limits**: Built-in row limit enforcement
+- **API Key Security**: Secure handling of API credentials
+
+## Contributing
+
+We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on how to contribute to this project.
 
 ## License
 
-See LICENSE file.
+This project is licensed under the terms specified in the [LICENSE](LICENSE) file.
+
+## Support
+
+- **Documentation**: https://benodiwal.github.io/pg_ai_query/
+- **Issues**: [GitHub Issues](https://github.com/benodiwal/pg_ai_query/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/benodiwal/pg_ai_query/discussions)
