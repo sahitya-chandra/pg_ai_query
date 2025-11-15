@@ -181,7 +181,8 @@ Datum explain_query(PG_FUNCTION_ARGS) {
 
     std::string query_text = text_to_cstring(query_text_arg);
     std::string api_key = api_key_arg ? text_to_cstring(api_key_arg) : "";
-    std::string provider = provider_arg ? text_to_cstring(provider_arg) : "auto";
+    std::string provider =
+        provider_arg ? text_to_cstring(provider_arg) : "auto";
 
     pg_ai::ExplainRequest request{
         .query_text = query_text, .api_key = api_key, .provider = provider};

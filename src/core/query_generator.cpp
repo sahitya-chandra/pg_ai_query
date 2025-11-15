@@ -606,20 +606,26 @@ ExplainResult QueryGenerator::explainQuery(const ExplainRequest& request) {
       return result;
     }
 
-    std::string explain_query = "EXPLAIN (ANALYZE, VERBOSE, COSTS, SETTINGS, BUFFERS, FORMAT JSON) " + request.query_text;
+    std::string explain_query =
+        "EXPLAIN (ANALYZE, VERBOSE, COSTS, SETTINGS, BUFFERS, FORMAT JSON) " +
+        request.query_text;
 
     int ret = SPI_execute(explain_query.c_str(), false, 0);
 
     if (ret < 0) {
-      result.error_message = "Failed to execute EXPLAIN query: " + std::string(SPI_result_code_string(ret));
+      result.error_message = "Failed to execute EXPLAIN query: " +
+                             std::string(SPI_result_code_string(ret));
       SPI_finish();
       return result;
     }
 
     if (ret != SPI_OK_SELECT && ret != SPI_OK_UTILITY) {
-      result.error_message = "Failed to execute EXPLAIN query. SPI result code: " + std::to_string(ret) +
-                           " (" + std::string(SPI_result_code_string(ret)) + "). " +
-                           "This may indicate the query failed or EXPLAIN ANALYZE is not supported in this context.";
+      result.error_message =
+          "Failed to execute EXPLAIN query. SPI result code: " +
+          std::to_string(ret) + " (" +
+          std::string(SPI_result_code_string(ret)) + "). " +
+          "This may indicate the query failed or EXPLAIN ANALYZE is not "
+          "supported in this context.";
       SPI_finish();
       return result;
     }
@@ -653,37 +659,47 @@ ExplainResult QueryGenerator::explainQuery(const ExplainRequest& request) {
 
     if (provider_preference == "openai") {
       selected_provider = config::Provider::OPENAI;
-      provider_config = config::ConfigManager::getProviderConfig(config::Provider::OPENAI);
-      if (api_key.empty() && provider_config && !provider_config->api_key.empty()) {
+      provider_config =
+          config::ConfigManager::getProviderConfig(config::Provider::OPENAI);
+      if (api_key.empty() && provider_config &&
+          !provider_config->api_key.empty()) {
         api_key = provider_config->api_key;
       }
     } else if (provider_preference == "anthropic") {
       selected_provider = config::Provider::ANTHROPIC;
-      provider_config = config::ConfigManager::getProviderConfig(config::Provider::ANTHROPIC);
-      if (api_key.empty() && provider_config && !provider_config->api_key.empty()) {
+      provider_config =
+          config::ConfigManager::getProviderConfig(config::Provider::ANTHROPIC);
+      if (api_key.empty() && provider_config &&
+          !provider_config->api_key.empty()) {
         api_key = provider_config->api_key;
       }
     } else {
       if (api_key.empty()) {
-        const auto* openai_config = config::ConfigManager::getProviderConfig(config::Provider::OPENAI);
+        const auto* openai_config =
+            config::ConfigManager::getProviderConfig(config::Provider::OPENAI);
         if (openai_config && !openai_config->api_key.empty()) {
           selected_provider = config::Provider::OPENAI;
           provider_config = openai_config;
           api_key = openai_config->api_key;
         } else {
-          const auto* anthropic_config = config::ConfigManager::getProviderConfig(config::Provider::ANTHROPIC);
+          const auto* anthropic_config =
+              config::ConfigManager::getProviderConfig(
+                  config::Provider::ANTHROPIC);
           if (anthropic_config && !anthropic_config->api_key.empty()) {
             selected_provider = config::Provider::ANTHROPIC;
             provider_config = anthropic_config;
             api_key = anthropic_config->api_key;
           } else {
-            result.error_message = "API key required. Pass as parameter or configure ~/.pg_ai.config";
+            result.error_message =
+                "API key required. Pass as parameter or configure "
+                "~/.pg_ai.config";
             return result;
           }
         }
       } else {
         selected_provider = config::Provider::OPENAI;
-        provider_config = config::ConfigManager::getProviderConfig(config::Provider::OPENAI);
+        provider_config =
+            config::ConfigManager::getProviderConfig(config::Provider::OPENAI);
       }
     }
 
@@ -694,9 +710,9 @@ ExplainResult QueryGenerator::explainQuery(const ExplainRequest& request) {
 
     std::string system_prompt = prompts::EXPLAIN_SYSTEM_PROMPT;
 
-    std::string prompt = "Please analyze this PostgreSQL EXPLAIN ANALYZE output:\n\nQuery:\n" +
-                        request.query_text + "\n\nEXPLAIN Output:\n" +
-                        result.explain_output;
+    std::string prompt =
+        "Please analyze this PostgreSQL EXPLAIN ANALYZE output:\n\nQuery:\n" +
+        request.query_text + "\n\nEXPLAIN Output:\n" + result.explain_output;
 
     ai::Client client;
     std::string model_name;
@@ -704,24 +720,30 @@ ExplainResult QueryGenerator::explainQuery(const ExplainRequest& request) {
     try {
       if (selected_provider == config::Provider::OPENAI) {
         client = ai::openai::create_client(api_key);
-        model_name = (provider_config && !provider_config->default_model.name.empty())
-                       ? provider_config->default_model.name : "gpt-4o";
+        model_name =
+            (provider_config && !provider_config->default_model.name.empty())
+                ? provider_config->default_model.name
+                : "gpt-4o";
       } else if (selected_provider == config::Provider::ANTHROPIC) {
         client = ai::anthropic::create_client(api_key);
-        model_name = (provider_config && !provider_config->default_model.name.empty())
-                       ? provider_config->default_model.name : "claude-3-5-sonnet-20241022";
+        model_name =
+            (provider_config && !provider_config->default_model.name.empty())
+                ? provider_config->default_model.name
+                : "claude-3-5-sonnet-20241022";
       } else {
         client = ai::openai::create_client(api_key);
         model_name = "gpt-4o";
       }
     } catch (const std::exception& e) {
-      result.error_message = "Failed to create AI client: " + std::string(e.what());
+      result.error_message =
+          "Failed to create AI client: " + std::string(e.what());
       return result;
     }
 
     ai::GenerateOptions options(model_name, system_prompt, prompt);
 
-    const config::ModelConfig* model_config = config::ConfigManager::getModelConfig(model_name);
+    const config::ModelConfig* model_config =
+        config::ConfigManager::getModelConfig(model_name);
     if (model_config) {
       options.max_tokens = model_config->max_tokens;
       options.temperature = model_config->temperature;

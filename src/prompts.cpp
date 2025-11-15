@@ -97,4 +97,4 @@ Your response should include:
 Keep the explanation concise but comprehensive. Use plain language that both developers and DBAs can understand.
 Format the response as plain text with clear section headers and bullet points. Do not use markdown syntax like **, ##, or ###.)";
 
-}
+}  // namespace pg_ai::prompts
