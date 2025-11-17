@@ -46,7 +46,7 @@ if(APPLE)
     add_library(pg_ai_query MODULE ${SOURCES})
     set_target_properties(pg_ai_query PROPERTIES
         PREFIX ""
-        SUFFIX ".so"
+        SUFFIX ".dylib"
         LINK_FLAGS "-bundle_loader ${PG_BINDIR}/postgres"
     )
 else()

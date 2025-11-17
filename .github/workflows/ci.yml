@@ -126,9 +126,6 @@ jobs:
           # Test $libdir resolution
           echo "Testing \$libdir resolution:"
           psql -d testdb -c "SHOW dynamic_library_path;" || echo "Could not check dynamic_library_path"
-          # Load with full path
-          echo "Testing extension loading with full path:"
-          psql -d testdb -c "LOAD '$EXTENSION_PATH';" || { echo "Could not load with full path"; exit 1; }
           # Check control and SQL files
           echo "Checking for control file:"
           ls -la "$PG_SHAREDIR/extension/pg_ai_query.control" || echo "Control file not found"

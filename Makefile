@@ -8,11 +8,11 @@ include $(PGXS)
 
 #Build Rules
 BUILD_DIR = build
-all: pg_ai_query.so
+all: pg_ai_query.dylib
 
-pg_ai_query.so: $(BUILD_DIR)/CMakeCache.txt
+pg_ai_query.dylib: $(BUILD_DIR)/CMakeCache.txt
 	$(MAKE) -C $(BUILD_DIR)
-	cp $(BUILD_DIR)/pg_ai_query.so .
+	cp $(BUILD_DIR)/pg_ai_query.dylib .
 
 $(BUILD_DIR)/CMakeCache.txt:
 	mkdir -p $(BUILD_DIR)
@@ -21,7 +21,7 @@ $(BUILD_DIR)/CMakeCache.txt:
 	    -DCMAKE_INSTALL_PREFIX=$(shell $(PG_CONFIG) --pkglibdir)
 
 clean:
-	rm -rf $(BUILD_DIR) install *.so
+	rm -rf $(BUILD_DIR) install *.so *.dylib
 
 .PHONY: all clean
 
