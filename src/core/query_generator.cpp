@@ -133,25 +133,23 @@ QueryResult QueryGenerator::generateQuery(const QueryRequest& request) {
         logger::Logger::info("Creating OpenAI client");
         client = ai::openai::create_client(api_key);
         model_name =
-            (provider_config && !provider_config->default_model.name.empty())
-                ? provider_config->default_model.name
+            (provider_config && !provider_config->default_model.empty())
+                ? provider_config->default_model
                 : "gpt-4o";
       } else if (provider == config::Provider::ANTHROPIC) {
         logger::Logger::info("Creating Anthropic client");
         client = ai::anthropic::create_client(api_key);
         model_name =
-            (provider_config && !provider_config->default_model.name.empty())
-                ? provider_config->default_model.name
-                : "claude-3-5-sonnet-20241022";
+            (provider_config && !provider_config->default_model.empty())
+                ? provider_config->default_model
+                : "claude-sonnet-4-5-20250929";
       } else {
         logger::Logger::warning("Unknown provider, defaulting to OpenAI");
         client = ai::openai::create_client(api_key);
         model_name = "gpt-4o";
       }
-
-      logger::Logger::info("Using " +
-                           config::ConfigManager::providerToString(provider) +
-                           " provider with model: " + model_name);
+      logger::Logger::info("Using Provider: " +
+                           config::ConfigManager::providerToString(provider));
     } catch (const std::exception& e) {
       logger::Logger::error("Failed to create " +
                             config::ConfigManager::providerToString(provider) +
@@ -162,15 +160,19 @@ QueryResult QueryGenerator::generateQuery(const QueryRequest& request) {
 
     ai::GenerateOptions options(model_name, system_prompt, prompt);
 
-    const config::ModelConfig* model_config =
-        config::ConfigManager::getModelConfig(model_name);
-    if (model_config) {
-      options.max_tokens = model_config->max_tokens;
-      options.temperature = model_config->temperature;
-      logger::Logger::info(
-          "Using model: " + model_name +
-          " with max_tokens=" + std::to_string(model_config->max_tokens) +
-          ", temperature=" + std::to_string(model_config->temperature));
+    if (provider_config) {
+      options.max_tokens = provider_config->default_max_tokens;
+      options.temperature = provider_config->default_temperature;
+      std::string log_msg = "Using model: " + model_name;
+      if (options.max_tokens.has_value()) {
+        log_msg +=
+            " with max_tokens=" + std::to_string(options.max_tokens.value());
+      }
+      if (options.temperature.has_value()) {
+        log_msg +=
+            ", temperature=" + std::to_string(options.temperature.value());
+      }
+      logger::Logger::info(log_msg);
     } else {
       logger::Logger::info("Using model: " + model_name +
                            " with default settings");
@@ -180,7 +182,8 @@ QueryResult QueryGenerator::generateQuery(const QueryRequest& request) {
 
     if (!result) {
       return {.success = false,
-              .error_message = "AI API error: " + result.error_message()};
+              .error_message = "AI API error: " +
+                               utils::formatAPIError(result.error_message())};
     }
 
     if (result.text.empty()) {
@@ -721,15 +724,15 @@ ExplainResult QueryGenerator::explainQuery(const ExplainRequest& request) {
       if (selected_provider == config::Provider::OPENAI) {
         client = ai::openai::create_client(api_key);
         model_name =
-            (provider_config && !provider_config->default_model.name.empty())
-                ? provider_config->default_model.name
+            (provider_config && !provider_config->default_model.empty())
+                ? provider_config->default_model
                 : "gpt-4o";
       } else if (selected_provider == config::Provider::ANTHROPIC) {
         client = ai::anthropic::create_client(api_key);
         model_name =
-            (provider_config && !provider_config->default_model.name.empty())
-                ? provider_config->default_model.name
-                : "claude-3-5-sonnet-20241022";
+            (provider_config && !provider_config->default_model.empty())
+                ? provider_config->default_model
+                : "claude-sonnet-4-5-20250929";
       } else {
         client = ai::openai::create_client(api_key);
         model_name = "gpt-4o";
@@ -742,17 +745,16 @@ ExplainResult QueryGenerator::explainQuery(const ExplainRequest& request) {
 
     ai::GenerateOptions options(model_name, system_prompt, prompt);
 
-    const config::ModelConfig* model_config =
-        config::ConfigManager::getModelConfig(model_name);
-    if (model_config) {
-      options.max_tokens = model_config->max_tokens;
-      options.temperature = model_config->temperature;
+    if (provider_config) {
+      options.max_tokens = provider_config->default_max_tokens;
+      options.temperature = provider_config->default_temperature;
     }
 
     auto ai_result = client.generate_text(options);
 
     if (!ai_result) {
-      result.error_message = "AI API error: " + ai_result.error_message();
+      result.error_message =
+          "AI API error: " + utils::formatAPIError(ai_result.error_message());
       return result;
     }
 

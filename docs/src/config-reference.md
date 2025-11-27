@@ -49,7 +49,7 @@ default_model = "gpt-4o"
 [anthropic]
 # Anthropic provider configuration
 api_key = ""
-default_model = "claude-3-5-sonnet-20241022"
+default_model = "claude-sonnet-4-5-20250929"
 ```
 
 ## Configuration Sections
@@ -181,7 +181,7 @@ Configuration for OpenAI provider.
 | Option | Type | Default | Values | Description |
 |--------|------|---------|--------|-------------|
 | `api_key` | string | "" | API key format | Your OpenAI API key |
-| `default_model` | string | "gpt-4o" | Model names | Default OpenAI model to use |
+| `default_model` | string | "gpt-4o" | Any valid model name | Default OpenAI model to use |
 
 #### api_key
 
@@ -218,7 +218,7 @@ Configuration for Anthropic (Claude) provider.
 | Option | Type | Default | Values | Description |
 |--------|------|---------|--------|-------------|
 | `api_key` | string | "" | API key format | Your Anthropic API key |
-| `default_model` | string | "claude-3-5-sonnet-20241022" | Model names | Default Claude model to use |
+| `default_model` | string | "claude-sonnet-4-5-20250929" | Any valid model name | Default Claude model to use |
 
 #### api_key
 
@@ -238,12 +238,12 @@ api_key = "sk-ant-abc123..."  # Your actual API key
 Default Anthropic model to use for query generation.
 
 **Available Models:**
-- `"claude-3-5-sonnet-20241022"`: Latest Claude 3.5 Sonnet model
+- `"claude-sonnet-4-5-20250929"`: Latest Claude 3.5 Sonnet model
 
 **Example:**
 ```ini
 [anthropic]
-default_model = "claude-3-5-sonnet-20241022"  # Use Claude 3.5 Sonnet
+default_model = "claude-sonnet-4-5-20250929"  # Use Claude 3.5 Sonnet
 ```
 
 ## Configuration Examples
@@ -308,7 +308,7 @@ default_model = "gpt-4o"
 
 [anthropic]
 api_key = "sk-ant-anthropic-key-here"
-default_model = "claude-3-5-sonnet-20241022"
+default_model = "claude-sonnet-4-5-20250929"
 
 # Extension will use OpenAI first (first configured)
 # Falls back to Anthropic if OpenAI fails
@@ -349,7 +349,7 @@ Each configuration value is validated:
 - **Type Checking**: Strings, integers, and booleans are validated
 - **Range Checking**: Numeric values must be within acceptable ranges
 - **Format Checking**: API keys must match expected formats
-- **Model Validation**: Model names must be supported
+- **Model Validation**: Accepts any valid model name string
 
 ### Error Handling
 
@@ -361,9 +361,23 @@ Configuration Error: request_timeout_ms must be between 1000 and 300000, got 500
 Configuration Error: OpenAI API key must start with 'sk-' or 'sk-proj-'
 ```
 
-## Configuration File Only
+## Environment Variables
 
-Currently, only configuration files are supported. All settings must be specified in `~/.pg_ai.config`.
+In addition to the configuration file, API keys can be provided via environment variables.
+
+| Environment Variable | Description |
+|----------------------|-------------|
+| `OPENAI_API_KEY` | API key for OpenAI |
+| `ANTHROPIC_API_KEY` | API key for Anthropic |
+
+**Note:** Environment variables take precedence over values specified in the configuration file.
+
+### Example Usage
+
+```bash
+export OPENAI_API_KEY="sk-..."
+export ANTHROPIC_API_KEY="sk-ant-..."
+```
 
 ## Security Considerations
 
@@ -407,8 +421,10 @@ api_key = "${ANTHROPIC_API_KEY}"  # Replace with actual key
 
 ### Configuration Loading Order
 
-The extension loads configuration in this order:
+The extension loads configuration in this order (last one wins):
+
 1. **Default values** (hardcoded)
 2. **Configuration file** (`~/.pg_ai.config`)
+3. **Environment variables** (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`)
 
-This provides a simple and secure configuration approach.
+This allows you to override file-based configuration with environment variables for specific runs or in containerized environments.

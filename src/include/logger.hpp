@@ -2,11 +2,14 @@
 
 #include <string>
 
+#ifdef USE_POSTGRESQL_ELOG
 extern "C" {
 #include <postgres.h>
 
 #include <utils/elog.h>
 }
+
+#endif
 
 namespace pg_ai::logger {
 

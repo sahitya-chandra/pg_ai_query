@@ -31,31 +31,12 @@ Configuration::Configuration() {
   show_suggested_visualization = false;
   use_formatted_response = false;
 
-  // Set up default OpenAI provider
+  // Default OpenAI provider
   default_provider.provider = Provider::OPENAI;
   default_provider.api_key = "";
-
-  // Default OpenAI models
-  ModelConfig gpt4o;
-  gpt4o.name = "gpt-4o";
-  gpt4o.description = "GPT-4 Omni - Latest model";
-  gpt4o.max_tokens = 16384;
-  gpt4o.temperature = 0.7;
-
-  ModelConfig gpt4;
-  gpt4.name = "gpt-4";
-  gpt4.description = "GPT-4 - High quality model";
-  gpt4.max_tokens = 8192;
-  gpt4.temperature = 0.7;
-
-  ModelConfig gpt35;
-  gpt35.name = "gpt-3.5-turbo";
-  gpt35.description = "GPT-3.5 Turbo - Fast and efficient";
-  gpt35.max_tokens = 4096;
-  gpt35.temperature = 0.7;
-
-  default_provider.available_models = {gpt4o, gpt4, gpt35};
-  default_provider.default_model = gpt4o;
+  default_provider.default_model = "gpt-4o";
+  default_provider.default_max_tokens = 4096;
+  default_provider.default_temperature = 0.7;
 
   providers.push_back(default_provider);
 }
@@ -87,10 +68,48 @@ bool ConfigManager::loadConfig(const std::string& config_path) {
     // Enable/disable logging based on config
     logger::Logger::setLoggingEnabled(config_.enable_logging);
     logger::Logger::info("Configuration loaded successfully");
+    // Override with environment variables
+    loadEnvConfig();
     return true;
   } else {
     logger::Logger::error("Failed to parse configuration file");
     return false;
+  }
+}
+
+void ConfigManager::loadEnvConfig() {
+  const char* openai_key = std::getenv("OPENAI_API_KEY");
+  if (openai_key) {
+    auto provider_config = getProviderConfigMutable(Provider::OPENAI);
+    if (!provider_config) {
+      ProviderConfig config;
+      config.provider = Provider::OPENAI;
+      config.default_model = "gpt-4o";
+      config.default_max_tokens = 16384;
+      config.default_temperature = 0.7;
+
+      config_.providers.push_back(config);
+      provider_config = &config_.providers.back();
+    }
+    provider_config->api_key = openai_key;
+    logger::Logger::info("Loaded OpenAI API key from environment variable");
+  }
+
+  const char* anthropic_key = std::getenv("ANTHROPIC_API_KEY");
+  if (anthropic_key) {
+    auto provider_config = getProviderConfigMutable(Provider::ANTHROPIC);
+    if (!provider_config) {
+      ProviderConfig config;
+      config.provider = Provider::ANTHROPIC;
+      config.default_model = "claude-sonnet-4-5-20250929";
+      config.default_max_tokens = 8192;
+      config.default_temperature = 0.7;
+
+      config_.providers.push_back(config);
+      provider_config = &config_.providers.back();
+    }
+    provider_config->api_key = anthropic_key;
+    logger::Logger::info("Loaded Anthropic API key from environment variable");
   }
 }
 
@@ -111,31 +130,6 @@ const ProviderConfig* ConfigManager::getProviderConfig(Provider provider) {
       return &p;
     }
   }
-  return nullptr;
-}
-
-const ModelConfig* ConfigManager::getModelConfig(
-    const std::string& model_name) {
-  if (!config_loaded_) {
-    loadConfig();
-  }
-
-  // Search in default provider first
-  for (const auto& model : config_.default_provider.available_models) {
-    if (model.name == model_name) {
-      return &model;
-    }
-  }
-
-  // Then search in all providers
-  for (const auto& provider : config_.providers) {
-    for (const auto& model : provider.available_models) {
-      if (model.name == model_name) {
-        return &model;
-      }
-    }
-  }
-
   return nullptr;
 }
 
@@ -232,46 +226,42 @@ bool ConfigManager::parseConfig(const std::string& content) {
     } else if (current_section == "openai") {
       auto provider_config = getProviderConfigMutable(Provider::OPENAI);
       if (!provider_config) {
-        // Create new provider config
-        ProviderConfig new_config;
-        new_config.provider = Provider::OPENAI;
-        config_.providers.push_back(new_config);
+        ProviderConfig config;
+        config.provider = Provider::OPENAI;
+        config.default_model = "gpt-4o";
+        config_.providers.push_back(config);
         provider_config = &config_.providers.back();
       }
 
       if (key == "api_key")
         provider_config->api_key = value;
-      else if (key == "default_model") {
-        // Find model in available models
-        for (const auto& model : provider_config->available_models) {
-          if (model.name == value) {
-            provider_config->default_model = model;
-            break;
-          }
-        }
-      }
+      else if (key == "default_model")
+        provider_config->default_model = value;
+      else if (key == "max_tokens")
+        provider_config->default_max_tokens = std::stoi(value);
+      else if (key == "temperature")
+        provider_config->default_temperature = std::stod(value);
+
     } else if (current_section == "anthropic") {
       auto provider_config = getProviderConfigMutable(Provider::ANTHROPIC);
       if (!provider_config) {
-        ProviderConfig new_config;
-        new_config.provider = Provider::ANTHROPIC;
+        ProviderConfig config;
+        config.provider = Provider::ANTHROPIC;
+        config.default_model = "claude-sonnet-4-5-20250929";
+        config.default_max_tokens = 8192;
 
-        // Add default Claude models
-        ModelConfig claude3_5;
-        claude3_5.name = "claude-3-5-sonnet-20241022";
-        claude3_5.description = "Claude 3.5 Sonnet - Latest model";
-        claude3_5.max_tokens = 8192;
-        claude3_5.temperature = 0.7;
-
-        new_config.available_models.push_back(claude3_5);
-        new_config.default_model = claude3_5;
-
-        config_.providers.push_back(new_config);
+        config_.providers.push_back(config);
         provider_config = &config_.providers.back();
       }
 
       if (key == "api_key")
         provider_config->api_key = value;
+      else if (key == "default_model")
+        provider_config->default_model = value;
+      else if (key == "max_tokens")
+        provider_config->default_max_tokens = std::stoi(value);
+      else if (key == "temperature")
+        provider_config->default_temperature = std::stod(value);
     }
   }
 
