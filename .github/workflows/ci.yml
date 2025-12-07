@@ -37,7 +37,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-24.04, macos-latest]
-        pg_version: ["14", "15", "16"]
+        pg_version: ["14", "15", "16", "17", "18"]
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
