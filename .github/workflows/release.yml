@@ -401,7 +401,7 @@ jobs:
 
         ## Requirements
 
-        - PostgreSQL 12+ with development headers
+        - PostgreSQL 14+ with development headers
         - OpenAI or Anthropic API key
         - C++20 compatible compiler (for building from source)
 

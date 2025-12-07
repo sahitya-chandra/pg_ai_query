@@ -22,7 +22,7 @@ We appreciate your interest in contributing to the PostgreSQL AI Query Extension
 
 Before you start contributing, make sure you have:
 
-- PostgreSQL 12+ with development headers
+- PostgreSQL 14+ with development headers
 - CMake 3.16 or later
 - C++20 compatible compiler (GCC 8+, Clang 10+, or MSVC 2019+)
 - Git for version control
