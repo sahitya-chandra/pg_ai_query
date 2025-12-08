@@ -8,13 +8,12 @@ extern "C" {
 #include <executor/spi.h>
 }
 
-#include <algorithm>
 #include <cctype>
-#include <fstream>
 #include <optional>
 #include <sstream>
 #include <vector>
 
+#include "../include/gemini_client.h"
 #include <ai/anthropic.h>
 #include <ai/openai.h>
 #include <nlohmann/json.hpp>
@@ -45,6 +44,62 @@ QueryResult QueryGenerator::generateQuery(const QueryRequest& request) {
           .error_message = "Natural language query cannot be empty"};
     }
 
+    // Handle Gemini separately as it's not yet integrated into ProviderSelector
+    if (request.provider == config::constants::PROVIDER_GEMINI) {
+      const config::ProviderConfig* gemini_config =
+          config::ConfigManager::getProviderConfig(config::Provider::GEMINI);
+      std::string api_key = request.api_key;
+
+      if (api_key.empty() && gemini_config && !gemini_config->api_key.empty()) {
+        api_key = gemini_config->api_key;
+        logger::Logger::info("Using Gemini API key from configuration");
+      }
+
+      if (api_key.empty()) {
+        return QueryResult{.generated_query = "",
+                           .explanation = "",
+                           .warnings = {},
+                           .row_limit_applied = false,
+                           .suggested_visualization = "",
+                           .success = false,
+                           .error_message =
+                               "Gemini API key required. Pass as parameter or "
+                               "set in ~/.pg_ai.config."};
+      }
+
+      std::string model_name =
+          (gemini_config && !gemini_config->default_model.empty())
+              ? gemini_config->default_model
+              : "gemini-2.5-flash";
+      logger::Logger::info("Using Gemini model: " + model_name);
+
+      std::string system_prompt = prompts::SYSTEM_PROMPT;
+      std::string prompt = buildPrompt(request);
+
+      gemini::GeminiClient gemini_client(api_key);
+      gemini::GeminiRequest gemini_request{
+          .model = model_name,
+          .system_prompt = system_prompt,
+          .user_prompt = prompt,
+          .temperature = gemini_config ? std::optional<double>(
+                                             gemini_config->default_temperature)
+                                       : std::nullopt,
+          .max_tokens = gemini_config ? std::optional<int>(
+                                            gemini_config->default_max_tokens)
+                                      : std::nullopt};
+
+      auto gemini_result = gemini_client.generate_text(gemini_request);
+
+      if (!gemini_result.success) {
+        return QueryResult{.success = false,
+                           .error_message = "Gemini API error: " +
+                                            gemini_result.error_message};
+      }
+
+      return QueryParser::parseQueryResponse(gemini_result.text);
+    }
+
+    // Use ProviderSelector for OpenAI and Anthropic
     auto selection =
         ProviderSelector::selectProvider(request.api_key, request.provider);
 
@@ -110,7 +165,6 @@ QueryResult QueryGenerator::generateQuery(const QueryRequest& request) {
     }
 
     return QueryParser::parseQueryResponse(result.text);
-
   } catch (const std::exception& e) {
     return QueryResult{.generated_query = "",
                        .explanation = "",

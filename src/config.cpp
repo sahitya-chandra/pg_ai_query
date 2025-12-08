@@ -108,6 +108,8 @@ std::string ConfigManager::providerToString(Provider provider) {
       return constants::PROVIDER_OPENAI;
     case Provider::ANTHROPIC:
       return constants::PROVIDER_ANTHROPIC;
+    case Provider::GEMINI:
+      return constants::PROVIDER_GEMINI;
     default:
       return constants::PROVIDER_UNKNOWN;
   }
@@ -121,6 +123,8 @@ Provider ConfigManager::stringToProvider(const std::string& provider_str) {
     return Provider::OPENAI;
   if (lower == constants::PROVIDER_ANTHROPIC)
     return Provider::ANTHROPIC;
+  if (lower == constants::PROVIDER_GEMINI)
+    return Provider::GEMINI;
   return Provider::UNKNOWN;
 }
 
@@ -234,6 +238,28 @@ bool ConfigManager::parseConfig(const std::string& content) {
         provider_config->default_temperature = std::stod(value);
       else if (key == "api_endpoint")
         provider_config->api_endpoint = value;
+
+    } else if (current_section == constants::SECTION_GEMINI) {
+      auto provider_config = getProviderConfigMutable(Provider::GEMINI);
+      if (!provider_config) {
+        ProviderConfig config;
+        config.provider = Provider::GEMINI;
+        config.default_model = "gemini-2.5-flash";
+        config.default_max_tokens = constants::DEFAULT_MAX_TOKENS;
+        config.default_temperature = constants::DEFAULT_TEMPERATURE;
+
+        config_.providers.push_back(config);
+        provider_config = &config_.providers.back();
+      }
+
+      if (key == "api_key")
+        provider_config->api_key = value;
+      else if (key == "default_model")
+        provider_config->default_model = value;
+      else if (key == "max_tokens")
+        provider_config->default_max_tokens = std::stoi(value);
+      else if (key == "temperature")
+        provider_config->default_temperature = std::stod(value);
     }
   }
 
