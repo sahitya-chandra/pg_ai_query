@@ -8,12 +8,14 @@ permissions:
   contents: write
   pull-requests: write
   issues: write
+  id-token: write
 
 jobs:
   claude:
     if: |
       github.event.issue.pull_request &&
-      contains(github.event.comment.body, '/claude')
+      contains(github.event.comment.body, '/claude') &&
+      github.event.comment.user.login == github.repository_owner
     runs-on: macos-latest
     steps:
       - name: Add reaction to comment

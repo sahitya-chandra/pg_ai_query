@@ -67,7 +67,6 @@ make clean
 - All exported functions must be declared with `PG_FUNCTION_INFO_V1()`
 - Use SPI (Server Programming Interface) for database queries
 - Configuration is read from `~/.pg_ai.config`
-- Environment variables `OPENAI_API_KEY` and `ANTHROPIC_API_KEY` override config
 
 ## Testing
 
