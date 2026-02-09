@@ -321,6 +321,7 @@ TEST_F(QueryParserTest, DetectsCannotGenerateQueryError) {
     })";
   auto result = QueryParser::parseQueryResponse(response);
   EXPECT_FALSE(result.success);
+  EXPECT_THAT(result.error_message, testing::HasSubstr("Cannot generate query"));
 }
 
 TEST_F(QueryParserTest, DetectsCannotCreateQueryError) {
@@ -330,6 +331,7 @@ TEST_F(QueryParserTest, DetectsCannotCreateQueryError) {
     })";
   auto result = QueryParser::parseQueryResponse(response);
   EXPECT_FALSE(result.success);
+  EXPECT_THAT(result.error_message, testing::HasSubstr("Cannot create query"));
 }
 
 TEST_F(QueryParserTest, DetectsUnableToGenerateError) {
@@ -339,6 +341,7 @@ TEST_F(QueryParserTest, DetectsUnableToGenerateError) {
     })";
   auto result = QueryParser::parseQueryResponse(response);
   EXPECT_FALSE(result.success);
+  EXPECT_THAT(result.error_message, testing::HasSubstr("Unable to generate"));
 }
 
 TEST_F(QueryParserTest, DetectsDoesNotExistError) {
@@ -348,6 +351,7 @@ TEST_F(QueryParserTest, DetectsDoesNotExistError) {
     })";
   auto result = QueryParser::parseQueryResponse(response);
   EXPECT_FALSE(result.success);
+  EXPECT_THAT(result.error_message, testing::HasSubstr("does not exist"));
 }
 
 TEST_F(QueryParserTest, DetectsDoNotExistError) {
@@ -357,6 +361,7 @@ TEST_F(QueryParserTest, DetectsDoNotExistError) {
     })";
   auto result = QueryParser::parseQueryResponse(response);
   EXPECT_FALSE(result.success);
+  EXPECT_THAT(result.error_message, testing::HasSubstr("do not exist"));
 }
 
 TEST_F(QueryParserTest, DetectsTableNotFoundError) {
@@ -366,6 +371,7 @@ TEST_F(QueryParserTest, DetectsTableNotFoundError) {
     })";
   auto result = QueryParser::parseQueryResponse(response);
   EXPECT_FALSE(result.success);
+  EXPECT_THAT(result.error_message, testing::HasSubstr("Table not found"));
 }
 
 TEST_F(QueryParserTest, DetectsColumnNotFoundError) {
@@ -375,6 +381,7 @@ TEST_F(QueryParserTest, DetectsColumnNotFoundError) {
     })";
   auto result = QueryParser::parseQueryResponse(response);
   EXPECT_FALSE(result.success);
+  EXPECT_THAT(result.error_message, testing::HasSubstr("Column not found"));
 }
 
 TEST_F(QueryParserTest, DetectsNoSuchTableError) {
@@ -384,6 +391,7 @@ TEST_F(QueryParserTest, DetectsNoSuchTableError) {
     })";
   auto result = QueryParser::parseQueryResponse(response);
   EXPECT_FALSE(result.success);
+  EXPECT_THAT(result.error_message, testing::HasSubstr("No such table"));
 }
 
 TEST_F(QueryParserTest, DetectsNoSuchColumnError) {
@@ -393,6 +401,7 @@ TEST_F(QueryParserTest, DetectsNoSuchColumnError) {
     })";
   auto result = QueryParser::parseQueryResponse(response);
   EXPECT_FALSE(result.success);
+  EXPECT_THAT(result.error_message, testing::HasSubstr("No such column"));
 }
 
 // ============================================================================
@@ -440,7 +449,7 @@ TEST_F(QueryParserTest, BlocksInformationSchemaAccess) {
     })";
   auto result = QueryParser::parseQueryResponse(response);
   EXPECT_FALSE(result.success);
-  EXPECT_TRUE(result.error_message.find("system tables") != std::string::npos);
+  EXPECT_THAT(result.error_message, testing::HasSubstr("system tables"));
 }
 
 TEST_F(QueryParserTest, BlocksPgCatalogAccess) {
@@ -450,7 +459,7 @@ TEST_F(QueryParserTest, BlocksPgCatalogAccess) {
     })";
   auto result = QueryParser::parseQueryResponse(response);
   EXPECT_FALSE(result.success);
-  EXPECT_TRUE(result.error_message.find("system tables") != std::string::npos);
+  EXPECT_THAT(result.error_message, testing::HasSubstr("system tables"));
 }
 
 TEST_F(QueryParserTest, BlocksSystemTableAccessCaseInsensitive) {
@@ -460,7 +469,7 @@ TEST_F(QueryParserTest, BlocksSystemTableAccessCaseInsensitive) {
     })";
   auto result = QueryParser::parseQueryResponse(response);
   EXPECT_FALSE(result.success);
-  EXPECT_TRUE(result.error_message.find("system tables") != std::string::npos);
+  EXPECT_THAT(result.error_message, testing::HasSubstr("system tables"));
 }
 
 // ============================================================================
@@ -511,6 +520,8 @@ TEST_F(QueryParserTest, ExtractsWarningsAsArray) {
   auto result = QueryParser::parseQueryResponse(response);
   EXPECT_TRUE(result.success);
   EXPECT_EQ(result.warnings.size(), 2);
+  EXPECT_EQ(result.warnings[0], "May return large results");
+  EXPECT_EQ(result.warnings[1], "Consider adding LIMIT");
 }
 
 TEST_F(QueryParserTest, ExtractsWarningsAsString) {
@@ -522,6 +533,7 @@ TEST_F(QueryParserTest, ExtractsWarningsAsString) {
   auto result = QueryParser::parseQueryResponse(response);
   EXPECT_TRUE(result.success);
   EXPECT_EQ(result.warnings.size(), 1);
+  EXPECT_EQ(result.warnings[0], "Consider adding an index");
 }
 
 TEST_F(QueryParserTest, HandlesMissingWarningsField) {
