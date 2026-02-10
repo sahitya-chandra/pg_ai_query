@@ -1,27 +1,32 @@
+// Unit tests for the Gemini AI provider client (src/providers/gemini/client.cpp).
+// Covers request building (build_request_body), response parsing (parse_response),
+// and error handling for the Gemini API without making live HTTP calls.
+
 #include <gtest/gtest.h>
 #include <nlohmann/json.hpp>
 
 #include "include/gemini_client.h"
 
-namespace {
+using namespace gemini;
 
-// Exposes protected methods for unit testing.
-class TestableGeminiClient : public gemini::GeminiClient {
+namespace gemini {
+
+// Exposes private methods for unit testing via friend declaration in GeminiClient.
+class TestableGeminiClient : public GeminiClient {
  public:
   explicit TestableGeminiClient(const std::string& api_key)
       : GeminiClient(api_key) {}
 
-  std::string build_request_body(const gemini::GeminiRequest& request) {
+  std::string build_request_body(const GeminiRequest& request) {
     return GeminiClient::build_request_body(request);
   }
 
-  gemini::GeminiResponse parse_response(const std::string& body,
-                                        int status_code) {
+  GeminiResponse parse_response(const std::string& body, int status_code) {
     return GeminiClient::parse_response(body, status_code);
   }
 };
 
-}  // namespace
+}  // namespace gemini
 
 class GeminiClientTest : public ::testing::Test {
  protected:
@@ -37,7 +42,8 @@ class GeminiClientTest : public ::testing::Test {
 // =============================================================================
 
 TEST_F(GeminiClientTest, BuildRequestBodyIncludesUserPrompt) {
-  gemini::GeminiRequest request;
+  GeminiRequest request;
+  // gemini-2.0-flash is a valid Gemini API model name.
   request.model = "gemini-2.0-flash";
   request.user_prompt = "Generate a query";
   request.system_prompt = "";
@@ -45,13 +51,14 @@ TEST_F(GeminiClientTest, BuildRequestBodyIncludesUserPrompt) {
   std::string body = client_->build_request_body(request);
   auto json = nlohmann::json::parse(body);
 
-  ASSERT_TRUE(json.contains("contents"));
-  ASSERT_TRUE(json["contents"].is_array());
+  ASSERT_TRUE(json.contains("contents")) << "Response missing 'contents' field";
+  ASSERT_TRUE(json["contents"].is_array()) << "'contents' is not an array";
+  ASSERT_FALSE(json["contents"].empty()) << "'contents' array is empty";
   EXPECT_EQ(json["contents"][0]["parts"][0]["text"], "Generate a query");
 }
 
 TEST_F(GeminiClientTest, BuildRequestBodyIncludesSystemPrompt) {
-  gemini::GeminiRequest request;
+  GeminiRequest request;
   request.model = "gemini-2.0-flash";
   request.user_prompt = "Generate a query";
   request.system_prompt = "You are a SQL expert";
@@ -59,13 +66,20 @@ TEST_F(GeminiClientTest, BuildRequestBodyIncludesSystemPrompt) {
   std::string body = client_->build_request_body(request);
   auto json = nlohmann::json::parse(body);
 
-  ASSERT_TRUE(json.contains("systemInstruction"));
+  ASSERT_TRUE(json.contains("systemInstruction"))
+      << "Response missing 'systemInstruction' field";
+  ASSERT_TRUE(json["systemInstruction"].contains("parts"))
+      << "'systemInstruction' missing 'parts'";
+  ASSERT_TRUE(json["systemInstruction"]["parts"].is_array())
+      << "'parts' is not an array";
+  ASSERT_FALSE(json["systemInstruction"]["parts"].empty())
+      << "'parts' array is empty";
   EXPECT_EQ(json["systemInstruction"]["parts"][0]["text"],
             "You are a SQL expert");
 }
 
 TEST_F(GeminiClientTest, BuildRequestBodyOmitsSystemInstructionWhenEmpty) {
-  gemini::GeminiRequest request;
+  GeminiRequest request;
   request.model = "gemini-2.0-flash";
   request.user_prompt = "Test";
   request.system_prompt = "";
@@ -77,7 +91,7 @@ TEST_F(GeminiClientTest, BuildRequestBodyOmitsSystemInstructionWhenEmpty) {
 }
 
 TEST_F(GeminiClientTest, BuildRequestBodyIncludesGenerationConfig) {
-  gemini::GeminiRequest request;
+  GeminiRequest request;
   request.model = "gemini-2.0-flash";
   request.user_prompt = "Test";
   request.temperature = 0.7;
@@ -86,13 +100,14 @@ TEST_F(GeminiClientTest, BuildRequestBodyIncludesGenerationConfig) {
   std::string body = client_->build_request_body(request);
   auto json = nlohmann::json::parse(body);
 
-  ASSERT_TRUE(json.contains("generationConfig"));
+  ASSERT_TRUE(json.contains("generationConfig"))
+      << "Response missing 'generationConfig' field";
   EXPECT_DOUBLE_EQ(json["generationConfig"]["temperature"].get<double>(), 0.7);
   EXPECT_EQ(json["generationConfig"]["maxOutputTokens"].get<int>(), 1000);
 }
 
 TEST_F(GeminiClientTest, BuildRequestBodyOmitsGenerationConfigWhenOptionalEmpty) {
-  gemini::GeminiRequest request;
+  GeminiRequest request;
   request.model = "gemini-2.0-flash";
   request.user_prompt = "Test";
   request.temperature = std::nullopt;
@@ -102,6 +117,89 @@ TEST_F(GeminiClientTest, BuildRequestBodyOmitsGenerationConfigWhenOptionalEmpty)
   auto json = nlohmann::json::parse(body);
 
   EXPECT_FALSE(json.contains("generationConfig"));
+}
+
+TEST_F(GeminiClientTest, BuildRequestBodyPartialGenerationConfig) {
+  GeminiRequest request;
+  request.model = "gemini-2.0-flash";
+  request.user_prompt = "Test";
+  request.temperature = 0.5;
+  request.max_tokens = std::nullopt;
+
+  std::string body = client_->build_request_body(request);
+  auto json = nlohmann::json::parse(body);
+
+  ASSERT_TRUE(json.contains("generationConfig"))
+      << "Response missing 'generationConfig' field";
+  EXPECT_TRUE(json["generationConfig"].contains("temperature"));
+  EXPECT_FALSE(json["generationConfig"].contains("maxOutputTokens"));
+}
+
+TEST_F(GeminiClientTest, BuildRequestBodyGenerationConfigTemperatureBoundary) {
+  GeminiRequest request;
+  request.model = "gemini-2.0-flash";
+  request.user_prompt = "Test";
+  request.temperature = 2.0;
+  request.max_tokens = std::nullopt;
+
+  std::string body = client_->build_request_body(request);
+  auto json = nlohmann::json::parse(body);
+
+  ASSERT_TRUE(json.contains("generationConfig"));
+  EXPECT_DOUBLE_EQ(json["generationConfig"]["temperature"].get<double>(), 2.0);
+}
+
+TEST_F(GeminiClientTest, BuildRequestBodyGenerationConfigNegativeTemperature) {
+  GeminiRequest request;
+  request.model = "gemini-2.0-flash";
+  request.user_prompt = "Test";
+  request.temperature = -0.5;
+  request.max_tokens = std::nullopt;
+
+  std::string body = client_->build_request_body(request);
+  auto json = nlohmann::json::parse(body);
+
+  ASSERT_TRUE(json.contains("generationConfig"));
+  EXPECT_DOUBLE_EQ(json["generationConfig"]["temperature"].get<double>(), -0.5);
+}
+
+TEST_F(GeminiClientTest, BuildRequestBodyGenerationConfigZeroMaxTokens) {
+  GeminiRequest request;
+  request.model = "gemini-2.0-flash";
+  request.user_prompt = "Test";
+  request.temperature = std::nullopt;
+  request.max_tokens = 0;
+
+  std::string body = client_->build_request_body(request);
+  auto json = nlohmann::json::parse(body);
+
+  ASSERT_TRUE(json.contains("generationConfig"));
+  EXPECT_EQ(json["generationConfig"]["maxOutputTokens"].get<int>(), 0);
+}
+
+TEST_F(GeminiClientTest, BuildRequestBodyEscapesSpecialCharacters) {
+  GeminiRequest request;
+  request.model = "gemini-2.0-flash";
+  request.user_prompt = "Show \"users\" with\nnewlines and 'quotes'";
+  request.system_prompt = "";
+
+  std::string body = client_->build_request_body(request);
+  EXPECT_NO_THROW(nlohmann::json::parse(body));
+}
+
+TEST_F(GeminiClientTest, BuildRequestBodyHandlesEmptyUserPrompt) {
+  GeminiRequest request;
+  request.model = "gemini-2.0-flash";
+  request.user_prompt = "";
+  request.system_prompt = "";
+
+  std::string body = client_->build_request_body(request);
+  auto json = nlohmann::json::parse(body);
+
+  ASSERT_TRUE(json.contains("contents")) << "Response missing 'contents' field";
+  ASSERT_TRUE(json["contents"].is_array()) << "'contents' is not an array";
+  ASSERT_FALSE(json["contents"].empty()) << "'contents' array is empty";
+  EXPECT_EQ(json["contents"][0]["parts"][0]["text"].get<std::string>(), "");
 }
 
 // =============================================================================
@@ -120,7 +218,66 @@ TEST_F(GeminiClientTest, ParseResponseExtractsContent) {
   auto result = client_->parse_response(response_body, 200);
 
   EXPECT_TRUE(result.success);
+  EXPECT_EQ(result.status_code, 200);
   EXPECT_EQ(result.text, "SELECT * FROM users;");
+}
+
+TEST_F(GeminiClientTest, ParseResponseUsesFirstCandidateOnly) {
+  std::string response_body = R"({
+        "candidates": [
+            {
+                "content": {
+                    "parts": [{"text": "First candidate text"}]
+                }
+            },
+            {
+                "content": {
+                    "parts": [{"text": "Second candidate text"}]
+                }
+            }
+        ]
+    })";
+
+  auto result = client_->parse_response(response_body, 200);
+
+  EXPECT_TRUE(result.success);
+  EXPECT_EQ(result.status_code, 200);
+  EXPECT_EQ(result.text, "First candidate text");
+}
+
+TEST_F(GeminiClientTest, ParseResponseUsesFirstPartOnly) {
+  std::string response_body = R"({
+        "candidates": [{
+            "content": {
+                "parts": [
+                    {"text": "First part text"},
+                    {"text": "Second part text"}
+                ]
+            }
+        }]
+    })";
+
+  auto result = client_->parse_response(response_body, 200);
+
+  EXPECT_TRUE(result.success);
+  EXPECT_EQ(result.status_code, 200);
+  EXPECT_EQ(result.text, "First part text");
+}
+
+TEST_F(GeminiClientTest, ParseResponseHandlesEmptyText) {
+  std::string response_body = R"({
+        "candidates": [{
+            "content": {
+                "parts": [{"text": ""}]
+            }
+        }]
+    })";
+
+  auto result = client_->parse_response(response_body, 200);
+
+  EXPECT_TRUE(result.success);
+  EXPECT_EQ(result.status_code, 200);
+  EXPECT_EQ(result.text, "");
 }
 
 // =============================================================================
@@ -138,6 +295,7 @@ TEST_F(GeminiClientTest, ParseResponseHandlesHttpError401) {
   auto result = client_->parse_response(error_body, 401);
 
   EXPECT_FALSE(result.success);
+  EXPECT_FALSE(result.error_message.empty()) << "Error response should have a user-friendly message";
   EXPECT_TRUE(result.error_message.find("Invalid API key") !=
               std::string::npos);
   EXPECT_EQ(result.status_code, 401);
@@ -154,6 +312,7 @@ TEST_F(GeminiClientTest, ParseResponseHandlesHttpError429) {
   auto result = client_->parse_response(error_body, 429);
 
   EXPECT_FALSE(result.success);
+  EXPECT_FALSE(result.error_message.empty()) << "Error response should have a user-friendly message";
   EXPECT_TRUE(result.error_message.find("Resource has been exhausted") !=
               std::string::npos);
   EXPECT_EQ(result.status_code, 429);
