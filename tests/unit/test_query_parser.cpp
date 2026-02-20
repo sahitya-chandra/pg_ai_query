@@ -360,8 +360,8 @@ TEST_F(QueryParserTest, ParseResponse_SystemTableAllowedWhenFlagTrue) {
         "explanation": "Lists all tables"
     })";
 
-  QueryResult result =
-      QueryParser::parseQueryResponse(response, true /* allow_system_table_access */);
+  QueryResult result = QueryParser::parseQueryResponse(
+      response, true /* allow_system_table_access */);
 
   EXPECT_TRUE(result.success);
   EXPECT_EQ(result.generated_query, "SELECT * FROM information_schema.tables");

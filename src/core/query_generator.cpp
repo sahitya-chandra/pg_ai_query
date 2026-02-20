@@ -94,7 +94,7 @@ QueryResult QueryGenerator::generateQuery(const QueryRequest& request) {
       }
 
       return QueryParser::parseQueryResponse(gemini_result.text,
-                                            cfg.allow_system_tables);
+                                             cfg.allow_system_tables);
     }
 
     // Use AIClientFactory for OpenAI and Anthropic
@@ -149,7 +149,8 @@ QueryResult QueryGenerator::generateQuery(const QueryRequest& request) {
                          .error_message = "Empty response from AI service"};
     }
 
-    return QueryParser::parseQueryResponse(result.text, cfg.allow_system_tables);
+    return QueryParser::parseQueryResponse(result.text,
+                                           cfg.allow_system_tables);
   } catch (const std::exception& e) {
     return QueryResult{.generated_query = "",
                        .explanation = "",
@@ -480,8 +481,9 @@ std::string QueryGenerator::formatSchemaForAI(const DatabaseSchema& schema) {
   result << "\nCRITICAL: If user asks for tables not listed above, return an "
             "error with available table names.\n";
   if (config::ConfigManager::getConfig().allow_system_tables) {
-    result << "You may query information_schema or pg_catalog when needed for "
-              "schema introspection (e.g. to show table or column structure).\n";
+    result
+        << "You may query information_schema or pg_catalog when needed for "
+           "schema introspection (e.g. to show table or column structure).\n";
   } else {
     result << "Do NOT query information_schema or pg_catalog tables.\n";
   }
