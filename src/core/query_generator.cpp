@@ -135,7 +135,19 @@ QueryResult QueryGenerator::generateQuery(const QueryRequest& request) {
           .suggested_visualization = "",
           .success = false,
           .error_message =
-              "AI API error: " + utils::formatAPIError(result.error_message())};
+              "AI API error: " +
+              utils::formatAPIError(
+                  client_result.client.provider_name(),
+                  [&]() -> int {
+                    if (!result.provider_metadata.has_value())
+                      return 0;
+                    try {
+                      return std::stoi(result.provider_metadata.value());
+                    } catch (const std::exception&) {
+                      return 0;
+                    }
+                  }(),
+                  result.error_message())};
     }
 
     if (result.text.empty()) {
@@ -640,7 +652,19 @@ ExplainResult QueryGenerator::explainQuery(const ExplainRequest& request) {
 
     if (!ai_result) {
       result.error_message =
-          "AI API error: " + utils::formatAPIError(ai_result.error_message());
+          "AI API error: " +
+          utils::formatAPIError(
+              client_result.client.provider_name(),
+              [&]() -> int {
+                if (!ai_result.provider_metadata.has_value())
+                  return 0;
+                try {
+                  return std::stoi(ai_result.provider_metadata.value());
+                } catch (const std::exception&) {
+                  return 0;
+                }
+              }(),
+              ai_result.error_message());
       return result;
     }
 
