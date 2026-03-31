@@ -93,4 +93,18 @@ std::string formatAPIError(const std::string& raw_error);
  */
 bool is_select_only_query(const std::string& sql);
 
+/**
+ * Validate SQL input for explain_query to prevent destructive queries.
+ *
+ * Examines the first SQL keyword after skipping leading whitespace and SQL
+ * comments (both line comments and block comments). Only SELECT and WITH
+ * (for CTE-based SELECTs) are allowed. All other statements (e.g. INSERT,
+ * UPDATE, DELETE, DROP, TRUNCATE, CREATE, ALTER) are rejected to avoid
+ * executing mutating or DDL statements via EXPLAIN ANALYZE.
+ *
+ * Returns std::nullopt if the SQL is safe to use with EXPLAIN, or an error
+ * message string if rejected.
+ */
+std::optional<std::string> validate_sql_for_explain(const std::string& sql);
+
 }  // namespace pg_ai::utils

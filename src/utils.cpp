@@ -116,7 +116,12 @@ std::string formatAPIError(const std::string& raw_error) {
   return raw_error;
 }
 
-bool is_select_only_query(const std::string& sql) {
+namespace {
+
+// Extract the first SQL keyword after skipping leading whitespace and
+// SQL comments (`--` line comments and `/* ... */` block comments).
+// Returns an empty string if no keyword is found.
+std::string extract_first_sql_keyword(const std::string& sql) {
   std::string s = sql;
   size_t i = 0;
   const size_t n = s.size();
@@ -162,7 +167,7 @@ bool is_select_only_query(const std::string& sql) {
   }
 
   if (i >= n) {
-    return false;
+    return {};
   }
 
   size_t start = i;
@@ -170,14 +175,41 @@ bool is_select_only_query(const std::string& sql) {
          (std::isalnum(static_cast<unsigned char>(s[i])) || s[i] == '_')) {
     ++i;
   }
-  std::string first_token = s.substr(start, i - start);
+
+  return s.substr(start, i - start);
+}
+
+}  // namespace
+
+bool is_select_only_query(const std::string& sql) {
+  std::string first_token = extract_first_sql_keyword(sql);
   if (first_token.empty()) {
     return false;
   }
-  for (char& c : first_token) {
-    c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-  }
+
+  std::transform(first_token.begin(), first_token.end(), first_token.begin(),
+                 [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+
   return first_token == "select";
+}
+
+std::optional<std::string> validate_sql_for_explain(const std::string& sql) {
+  std::string first_token = extract_first_sql_keyword(sql);
+
+  if (first_token.empty()) {
+    return "Query text cannot be empty or contain only comments.";
+  }
+
+  std::transform(first_token.begin(), first_token.end(), first_token.begin(),
+                 [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
+
+  if (first_token == "SELECT" || first_token == "WITH") {
+    return std::nullopt;
+  }
+
+  return "Only SELECT and WITH (CTE) queries can be explained. Mutating or DDL "
+         "statements (e.g. INSERT, UPDATE, DELETE, DROP, TRUNCATE) are not "
+         "allowed for safety.";
 }
 
 }  // namespace pg_ai::utils

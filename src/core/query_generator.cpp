@@ -516,15 +516,9 @@ ExplainResult QueryGenerator::explainQuery(const ExplainRequest& request) {
   ExplainResult result{.success = false};
 
   try {
-    if (request.query_text.empty()) {
-      result.error_message = "Query text cannot be empty";
-      return result;
-    }
-
-    if (!utils::is_select_only_query(request.query_text)) {
-      result.error_message =
-          "Only SELECT queries can be explained. Mutating or DDL statements "
-          "(e.g. INSERT, UPDATE, DELETE, DROP) are not allowed for safety.";
+    if (auto validation_error =
+            utils::validate_sql_for_explain(request.query_text)) {
+      result.error_message = *validation_error;
       return result;
     }
 
