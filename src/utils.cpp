@@ -243,8 +243,9 @@ bool is_select_only_query(const std::string& sql) {
     return false;
   }
 
-  std::transform(first_token.begin(), first_token.end(), first_token.begin(),
-                 [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+  std::transform(
+      first_token.begin(), first_token.end(), first_token.begin(),
+      [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
 
   return first_token == "select";
 }
@@ -256,8 +257,9 @@ std::optional<std::string> validate_sql_for_explain(const std::string& sql) {
     return "Query text cannot be empty or contain only comments.";
   }
 
-  std::transform(first_token.begin(), first_token.end(), first_token.begin(),
-                 [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
+  std::transform(
+      first_token.begin(), first_token.end(), first_token.begin(),
+      [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
 
   if (first_token == "SELECT" || first_token == "WITH") {
     return std::nullopt;
