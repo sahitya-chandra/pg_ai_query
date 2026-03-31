@@ -135,7 +135,19 @@ QueryResult QueryGenerator::generateQuery(const QueryRequest& request) {
           .suggested_visualization = "",
           .success = false,
           .error_message =
-              "AI API error: " + utils::formatAPIError(result.error_message())};
+              "AI API error: " +
+              utils::formatAPIError(
+                  client_result.client.provider_name(),
+                  [&]() -> int {
+                    if (!result.provider_metadata.has_value())
+                      return 0;
+                    try {
+                      return std::stoi(result.provider_metadata.value());
+                    } catch (const std::exception&) {
+                      return 0;
+                    }
+                  }(),
+                  result.error_message())};
     }
 
     if (result.text.empty()) {
@@ -162,7 +174,6 @@ QueryResult QueryGenerator::generateQuery(const QueryRequest& request) {
 
 std::string QueryGenerator::buildPrompt(const QueryRequest& request) {
   std::ostringstream prompt;
-  const auto& cfg = config::ConfigManager::getConfig();
 
   prompt << "Generate a PostgreSQL query for this request:\n\n";
   prompt << "Request: " << request.natural_language << "\n";
@@ -230,7 +241,7 @@ DatabaseSchema QueryGenerator::getDatabaseTables() {
                 t.table_name,
                 t.table_schema,
                 t.table_type,
-                COALESCE(pg_stat.n_tup_ins + pg_stat.n_tup_upd + pg_stat.n_tup_del, 0) as estimated_rows
+                COALESCE(pg_stat.n_live_tup, 0) as estimated_rows
             FROM information_schema.tables t
             LEFT JOIN pg_stat_user_tables pg_stat ON t.table_name = pg_stat.relname
                 AND t.table_schema = pg_stat.schemaname
@@ -642,7 +653,19 @@ ExplainResult QueryGenerator::explainQuery(const ExplainRequest& request) {
 
     if (!ai_result) {
       result.error_message =
-          "AI API error: " + utils::formatAPIError(ai_result.error_message());
+          "AI API error: " +
+          utils::formatAPIError(
+              client_result.client.provider_name(),
+              [&]() -> int {
+                if (!ai_result.provider_metadata.has_value())
+                  return 0;
+                try {
+                  return std::stoi(ai_result.provider_metadata.value());
+                } catch (const std::exception&) {
+                  return 0;
+                }
+              }(),
+              ai_result.error_message());
       return result;
     }
 
