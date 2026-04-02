@@ -8,11 +8,13 @@ description = "Generate SQL queries from natural language using AI - Documentati
 [build]
 build-dir = "book"
 
+[preprocessor.mermaid]
+command = "mdbook-mermaid"
+
 [output.html]
 default-theme = "light"
 preferred-dark-theme = "navy"
 smart-punctuation = true
 mathjax-support = false
-copy-fonts = true
 additional-css = []
-additional-js = []
+additional-js = ["mermaid.min.js", "mermaid-init.js"]
