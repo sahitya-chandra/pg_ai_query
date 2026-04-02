@@ -14,9 +14,9 @@ extern "C" {
 #include <nlohmann/json.hpp>
 
 #include "include/config.hpp"
+#include "include/pg_ai_query_utils.hpp"
 #include "include/query_generator.hpp"
 #include "include/response_formatter.hpp"
-#include "include/utils.hpp"
 
 extern "C" {
 PG_MODULE_MAGIC;
