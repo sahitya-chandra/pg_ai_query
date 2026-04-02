@@ -1,3 +1,9 @@
+extern "C" {
+#include <postgres.h>
+
+#include <utils/builtins.h>
+}
+
 #include "./include/utils.hpp"
 
 #include <algorithm>
@@ -7,10 +13,6 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
-
-extern "C" {
-#include <utils/builtins.h>
-}
 
 #include <nlohmann/json.hpp>
 

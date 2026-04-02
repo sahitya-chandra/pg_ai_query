@@ -5,7 +5,8 @@
 #include <utility>
 
 extern "C" {
-#include <postgres.h>
+struct varlena;
+typedef struct varlena text;
 }
 
 namespace pg_ai::utils {
