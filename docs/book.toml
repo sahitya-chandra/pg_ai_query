@@ -16,5 +16,5 @@ default-theme = "light"
 preferred-dark-theme = "navy"
 smart-punctuation = true
 mathjax-support = false
-additional-css = []
-additional-js = ["mermaid.min.js", "mermaid-init.js"]
+additional-css = ["mermaid-zoom.css"]
+additional-js = ["mermaid.min.js", "mermaid-init.js", "mermaid-zoom.js"]
